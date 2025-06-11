@@ -124,8 +124,8 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      // Cast the response to the correct type
-      const jobs = rawJobs as BasicJobRow[] | null;
+      // Cast the response to the correct type using double assertion
+      const jobs = (rawJobs as unknown) as BasicJobRow[] | null;
 
       const stats: JobStatistics = {
         totalJobs: jobs?.length || 0,
@@ -208,8 +208,8 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      // Cast the response to the correct type
-      const jobs = rawJobs as TypedJobRow[] | null;
+      // Cast the response to the correct type using double assertion
+      const jobs = (rawJobs as unknown) as TypedJobRow[] | null;
 
       const typeStats: JobTypeStats = {};
 
@@ -354,8 +354,8 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      // Cast the response to the correct type
-      const recentJobs = rawJobs as PerformanceJobRow[] | null;
+      // Cast the response to the correct type using double assertion
+      const recentJobs = (rawJobs as unknown) as PerformanceJobRow[] | null;
 
       if (!recentJobs || !Array.isArray(recentJobs)) {
         const emptyMetrics: PerformanceMetrics = {
@@ -413,8 +413,8 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      // Cast the response to the correct type
-      const stuckJobs = rawStuckJobs as JobData[] | null;
+      // Cast the response to the correct type using double assertion (safer)
+      const stuckJobs = (rawStuckJobs as unknown) as JobData[] | null;
 
       console.log(`🔍 Found ${stuckJobs?.length || 0} potentially stuck jobs`);
       return stuckJobs || [];
@@ -442,8 +442,8 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      // Cast the response to the correct type
-      const deletedJobs = rawDeletedJobs as Array<{ id: string }> | null;
+      // Cast the response to the correct type using double assertion
+      const deletedJobs = (rawDeletedJobs as unknown) as Array<{ id: string }> | null;
 
       const deletedCount = deletedJobs?.length || 0;
       console.log(`🧹 Cleaned up ${deletedCount} old jobs`);
