@@ -120,4 +120,5 @@ export interface JobUpdateData {
   started_at?: string;
   completed_at?: string;
   updated_at?: string;
+  retry_count?: number;
 }

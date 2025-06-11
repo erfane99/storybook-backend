@@ -13,6 +13,15 @@ interface CronProvider {
   secretEnvVar: string;
 }
 
+interface CronRequestBody {
+  maxJobs?: number;
+  jobTypes?: string[];
+  emergencyMode?: boolean;
+  cleanup?: boolean;
+  cleanupDays?: number;
+  healthCheck?: boolean;
+}
+
 // Supported cron providers
 const cronProviders: CronProvider[] = [
   {
@@ -54,7 +63,7 @@ export async function POST(request: Request) {
     console.log(`✅ Webhook validated from provider: ${validationResult.provider}`);
 
     // Parse request body for options
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => ({})) as CronRequestBody;
     const {
       maxJobs = 10,
       jobTypes = [],
@@ -142,7 +151,7 @@ export async function POST(request: Request) {
           cleaned,
           olderThanDays: cleanupDays,
         };
-      } catch (cleanupError) {
+      } catch (cleanupError: unknown) {
         console.error('❌ Cleanup failed:', cleanupError);
         results.cleanup = {
           error: 'Cleanup failed',
@@ -176,18 +185,18 @@ export async function POST(request: Request) {
 
     return NextResponse.json(results);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Cron job processing error:', error);
     
     const processingTime = Date.now() - startTime;
     
     return NextResponse.json({
-      error: error.message || 'Cron processing failed',
+      error: error instanceof Error ? error.message : 'Cron processing failed',
       timestamp: new Date().toISOString(),
       processed: 0,
       errors: 1,
       processingTime,
-      details: process.env.NODE_ENV === 'development' ? error.toString() : undefined,
+      details: process.env.NODE_ENV === 'development' ? String(error) : undefined,
       recommendations: [
         'Check system logs for detailed error information',
         'Verify webhook configuration and secrets',
@@ -296,12 +305,12 @@ async function performHealthCheck(): Promise<{
       details: queueStatus,
     };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Health check failed:', error);
     return {
       healthy: false,
       message: 'Health check failed',
-      details: { error: error.message },
+      details: { error: error instanceof Error ? error.message : String(error) },
     };
   }
 }

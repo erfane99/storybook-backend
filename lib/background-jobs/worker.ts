@@ -8,6 +8,20 @@ interface ProcessingStats {
   details?: string[];
 }
 
+interface QueueStatus {
+  queue: {
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+  };
+  processor: any;
+  worker: {
+    isRunning: boolean;
+    healthy: boolean;
+  };
+}
+
 class BackgroundJobWorker {
   private isRunning = false;
   private intervalId: NodeJS.Timeout | null = null;
@@ -194,13 +208,18 @@ class BackgroundJobWorker {
   }
 
   // Get processing queue status
-  async getQueueStatus() {
+  async getQueueStatus(): Promise<QueueStatus | null> {
     try {
       const stats = await jobManager.getJobStats();
       const processorStats = jobProcessor.getProcessingStats();
       
       return {
-        queue: stats,
+        queue: {
+          pending: stats.pending,
+          processing: stats.processing,
+          completed: stats.completed,
+          failed: stats.failed,
+        },
         processor: processorStats,
         worker: {
           isRunning: this.isRunning,
