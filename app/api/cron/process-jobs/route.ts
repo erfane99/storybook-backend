@@ -97,7 +97,13 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Apply rate limiting
+    // Apply rate limiting - Add null check for provider
+    if (!validationResult.provider) {
+      return NextResponse.json({
+        error: 'Provider is required for rate limiting',
+      }, { status: 400 });
+    }
+
     const rateLimitResult = await checkRateLimit(validationResult.provider);
     if (!rateLimitResult.allowed) {
       return NextResponse.json({
