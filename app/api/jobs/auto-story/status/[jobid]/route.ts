@@ -73,8 +73,8 @@ export async function GET(
       response.result = job.result_data;
       response.message = 'Auto-story generation completed successfully';
       
-      // Include storybook ID for redirection
-      if (job.result_data.storybook_id) {
+      // Include storybook ID for redirection - Fixed type checking
+      if (job.result_data && 'storybook_id' in job.result_data && job.result_data.storybook_id) {
         const host = request.headers.get('host');
         const protocol = request.headers.get('x-forwarded-proto') || 'https';
         response.storybookUrl = `${protocol}://${host}/storybook/${job.result_data.storybook_id}`;
@@ -109,12 +109,12 @@ export async function GET(
 
     return NextResponse.json(response, { headers });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Auto-story status check error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to get job status',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to get job status',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );
