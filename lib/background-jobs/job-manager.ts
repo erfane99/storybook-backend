@@ -508,21 +508,23 @@ class BackgroundJobManager {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<any[]>(
       'Cleanup old jobs',
       async (supabase) => {
         const response = await supabase
           .from('background_jobs')
           .delete()
           .in('status', ['completed', 'failed', 'cancelled'])
-          .lt('completed_at', cutoffDate.toISOString());
+          .lt('completed_at', cutoffDate.toISOString())
+          .select('id');
         return { data: response.data, error: response.error };
       }
     );
 
     if (result) {
-      console.log(`🧹 Cleaned up old jobs`);
-      return Array.isArray(result) ? result.length : 0;
+      const deletedCount = Array.isArray(result) ? result.length : 0;
+      console.log(`🧹 Cleaned up ${deletedCount} old jobs`);
+      return deletedCount;
     }
 
     return 0;
