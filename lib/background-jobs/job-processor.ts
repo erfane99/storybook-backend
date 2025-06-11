@@ -123,15 +123,15 @@ class BackgroundJobProcessor {
       await jobManager.updateJobProgress(job.id, 25, 'Character analysis complete');
 
       // Step 2: Process scenes page by page (25% → 75%)
-      const updatedPages = [];
-      const totalScenes = pages.reduce((total: number, page: any) => total + page.scenes.length, 0);
+      const updatedPages: any[] = [];
+      const totalScenes = pages.reduce((total: number, page: any) => total + (page.scenes?.length || 0), 0);
       let processedScenes = 0;
 
       for (const [pageIndex, page] of pages.entries()) {
         console.log(`Processing Page ${pageIndex + 1} of ${pages.length}`);
         const updatedScenes = [];
 
-        for (const [sceneIndex, scene] of page.scenes.entries()) {
+        for (const [sceneIndex, scene] of (page.scenes || []).entries()) {
           try {
             const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
             
@@ -192,11 +192,15 @@ class BackgroundJobProcessor {
         page.scenes.some((scene: any) => scene.error)
       );
 
-      // Import Supabase client
+      // Import Supabase client with proper error handling
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        throw new Error('Missing required Supabase environment variables');
+      }
+
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
       );
 
       const { data: storybookEntry, error: supabaseError } = await supabase
@@ -441,8 +445,11 @@ class BackgroundJobProcessor {
       let cachedUrl: string | null = null;
       if (job.user_id && cartoon_image) {
         try {
-          const { getCachedCartoonImage } = await import('@/lib/supabase/cache-utils');
-          cachedUrl = await getCachedCartoonImage(cartoon_image, style || 'storybook', job.user_id);
+          // Use relative import path that's more likely to resolve
+          const cacheUtils = await import('../supabase/cache-utils').catch(() => null);
+          if (cacheUtils?.getCachedCartoonImage) {
+            cachedUrl = await cacheUtils.getCachedCartoonImage(cartoon_image, style || 'storybook', job.user_id);
+          }
         } catch (error) {
           console.warn('⚠️ Cache check failed, continuing with generation');
         }
