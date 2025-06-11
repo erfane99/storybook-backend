@@ -1,5 +1,4 @@
 export type JobType = 'storybook' | 'auto-story' | 'scenes' | 'cartoonize' | 'image-generation';
-
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface BaseJobData {
@@ -111,6 +110,7 @@ export interface JobFilter {
   offset?: number;
 }
 
+// Fixed JobUpdateData interface with all required properties
 export interface JobUpdateData {
   status?: JobStatus;
   progress?: number;
@@ -120,5 +120,5 @@ export interface JobUpdateData {
   started_at?: string;
   completed_at?: string;
   updated_at?: string;
-  retry_count?: number;
+  retry_count?: number; // ✅ This was missing - causing the TypeScript error!
 }
