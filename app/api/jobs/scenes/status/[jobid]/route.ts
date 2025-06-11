@@ -73,8 +73,8 @@ export async function GET(
       response.result = job.result_data;
       response.message = 'Scene generation completed successfully';
       
-      // Include scene count and page information
-      if (job.result_data.pages) {
+      // Include scene count and page information - Fixed type checking
+      if (job.result_data && 'pages' in job.result_data && job.result_data.pages) {
         const totalScenes = job.result_data.pages.reduce((total: number, page: any) => 
           total + (page.scenes ? page.scenes.length : 0), 0
         );
@@ -114,12 +114,12 @@ export async function GET(
 
     return NextResponse.json(response, { headers });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Scene status check error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to get job status',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to get job status',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );

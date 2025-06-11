@@ -121,12 +121,12 @@ export async function POST(request: Request) {
       ]
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Auto-story job creation error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to start auto-story generation',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to start auto-story generation',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );

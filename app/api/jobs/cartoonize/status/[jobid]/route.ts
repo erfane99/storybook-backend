@@ -78,8 +78,8 @@ export async function GET(
       response.result = job.result_data;
       response.message = 'Image cartoonization completed successfully';
       
-      // Include processing information
-      if (job.result_data.cached) {
+      // Include processing information - Fixed type checking
+      if (job.result_data && 'cached' in job.result_data && job.result_data.cached) {
         response.processingInfo = {
           cached: true,
           message: 'Result retrieved from cache for faster delivery'
@@ -120,12 +120,12 @@ export async function GET(
 
     return NextResponse.json(response, { headers });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Cartoonize status check error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to get job status',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to get job status',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );

@@ -78,11 +78,11 @@ export async function GET(
       response.result = job.result_data;
       response.message = 'Image generation completed successfully';
       
-      // Include generation information
+      // Include generation information - Fixed type checking
       response.generationInfo = {
-        reused: job.result_data.reused || false,
-        promptUsed: job.result_data.prompt_used || 'Custom prompt',
-        style: job.input_data.style || 'storybook'
+        reused: job.result_data && 'reused' in job.result_data ? job.result_data.reused : false,
+        promptUsed: job.result_data && 'prompt_used' in job.result_data ? job.result_data.prompt_used : 'Custom prompt',
+        style: job.input_data && 'style' in job.input_data ? job.input_data.style : 'storybook'
       };
     }
 
@@ -114,12 +114,12 @@ export async function GET(
 
     return NextResponse.json(response, { headers });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Image status check error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to get job status',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to get job status',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );
