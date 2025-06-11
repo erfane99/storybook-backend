@@ -146,7 +146,7 @@ export async function POST(request: Request) {
         console.error('❌ Cleanup failed:', cleanupError);
         results.cleanup = {
           error: 'Cleanup failed',
-          details: cleanupError.message,
+          details: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
         };
       }
     }
