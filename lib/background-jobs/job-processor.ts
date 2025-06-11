@@ -60,7 +60,7 @@ class BackgroundJobProcessor {
         await jobManager.updateJobProgress(job.id, 1, 'Starting job processing');
       }
 
-      // Route to appropriate processor
+      // Route to appropriate processor with proper type checking
       switch (job.type) {
         case 'storybook':
           await this.processStorybookJob(job as StorybookJobData);
@@ -78,7 +78,9 @@ class BackgroundJobProcessor {
           await this.processImageJob(job as ImageJobData);
           break;
         default:
-          throw new Error(`Unknown job type: ${job.type}`);
+          // Use type assertion to help TypeScript understand this is a valid job type
+          const jobType = (job as JobData).type;
+          throw new Error(`Unknown job type: ${jobType}`);
       }
     } catch (error: any) {
       console.error(`❌ Job processing failed: ${job.id}`, error);
