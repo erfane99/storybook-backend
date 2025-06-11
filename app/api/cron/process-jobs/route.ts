@@ -273,12 +273,20 @@ async function performHealthCheck(): Promise<{
     const queueStatus = await jobWorker.getQueueStatus();
     const config = jobConfig.getConfig();
 
-    // Check queue depth
-    if (queueStatus.pending > config.alertThresholds.queueDepth) {
+    // Check if queueStatus is null
+    if (!queueStatus) {
+      return {
+        healthy: false,
+        message: 'Unable to retrieve queue status',
+      };
+    }
+
+    // Check queue depth - access pending through queue property
+    if (queueStatus.queue.pending > config.alertThresholds.queueDepth) {
       return {
         healthy: false,
         message: 'Queue depth exceeds alert threshold',
-        details: { queueDepth: queueStatus.pending, threshold: config.alertThresholds.queueDepth },
+        details: { queueDepth: queueStatus.queue.pending, threshold: config.alertThresholds.queueDepth },
       };
     }
 
@@ -365,7 +373,7 @@ function generateCronRecommendations(
   const recommendations: string[] = [];
 
   // Provider-specific recommendations
-  if (provider === 'GitHub Actions' && results.processed === 0 && queueStatus.pending > 0) {
+  if (provider === 'GitHub Actions' && results.processed === 0 && queueStatus && queueStatus.queue.pending > 0) {
     recommendations.push('Consider increasing GitHub Actions frequency or using Vercel Cron for more frequent processing');
   }
 
@@ -375,7 +383,7 @@ function generateCronRecommendations(
   }
 
   // Queue recommendations
-  if (queueStatus.pending > 20) {
+  if (queueStatus && queueStatus.queue.pending > 20) {
     recommendations.push('High queue depth - consider increasing cron frequency or enabling emergency mode');
   }
 
