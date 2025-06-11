@@ -97,7 +97,10 @@ class BackgroundJobProcessor {
       let characterDescription = '';
       if (!isReusedImage) {
         try {
-          const describeResponse = await fetch('http://localhost:3001/api/image/describe', {
+          // Get base URL from environment or use localhost
+          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+          
+          const describeResponse = await fetch(`${baseUrl}/api/image/describe`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageUrl: characterImage }),
@@ -119,7 +122,7 @@ class BackgroundJobProcessor {
 
       // Step 2: Process scenes page by page (25% → 75%)
       const updatedPages = [];
-      const totalScenes = pages.reduce((total, page) => total + page.scenes.length, 0);
+      const totalScenes = pages.reduce((total: number, page: any) => total + page.scenes.length, 0);
       let processedScenes = 0;
 
       for (const [pageIndex, page] of pages.entries()) {
@@ -128,7 +131,9 @@ class BackgroundJobProcessor {
 
         for (const [sceneIndex, scene] of page.scenes.entries()) {
           try {
-            const imageResponse = await fetch('http://localhost:3001/api/story/generate-cartoon-image', {
+            const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+            
+            const imageResponse = await fetch(`${baseUrl}/api/story/generate-cartoon-image`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -155,7 +160,7 @@ class BackgroundJobProcessor {
                 error: 'Failed to generate image',
               });
             }
-          } catch (error) {
+          } catch (error: any) {
             updatedScenes.push({
               ...scene,
               generatedImage: characterImage, // Fallback
@@ -181,8 +186,8 @@ class BackgroundJobProcessor {
       await jobManager.updateJobProgress(job.id, 75, 'All scenes processed, saving storybook');
 
       // Step 3: Save to database (75% → 100%)
-      const hasErrors = updatedPages.some(page => 
-        page.scenes.some(scene => scene.error)
+      const hasErrors = updatedPages.some((page: any) => 
+        page.scenes.some((scene: any) => scene.error)
       );
 
       // Import Supabase client
@@ -237,7 +242,9 @@ class BackgroundJobProcessor {
       // Step 1: Generate story content (0% → 40%)
       await jobManager.updateJobProgress(job.id, 5, 'Generating story content');
 
-      const storyResponse = await fetch('http://localhost:3001/api/story/generate-auto-story', {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+      
+      const storyResponse = await fetch(`${baseUrl}/api/story/generate-auto-story`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -283,7 +290,9 @@ class BackgroundJobProcessor {
       let characterDescription = 'a young protagonist';
       if (characterImage) {
         try {
-          const describeResponse = await fetch('http://localhost:3001/api/image/describe', {
+          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+          
+          const describeResponse = await fetch(`${baseUrl}/api/image/describe`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageUrl: characterImage }),
@@ -303,7 +312,9 @@ class BackgroundJobProcessor {
       // Step 2: Scene planning (30% → 70%)
       await jobManager.updateJobProgress(job.id, 40, 'Breaking story into scenes');
 
-      const scenesResponse = await fetch('http://localhost:3001/api/story/generate-scenes', {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+      
+      const scenesResponse = await fetch(`${baseUrl}/api/story/generate-scenes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -368,7 +379,9 @@ class BackgroundJobProcessor {
       // Step 2: DALL-E generation (33% → 66%)
       await jobManager.updateJobProgress(job.id, 40, 'Generating cartoon image');
 
-      const cartoonizeResponse = await fetch('http://localhost:3001/api/image/cartoonize', {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+      
+      const cartoonizeResponse = await fetch(`${baseUrl}/api/image/cartoonize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -446,7 +459,9 @@ class BackgroundJobProcessor {
       await jobManager.updateJobProgress(job.id, 50, 'Cache check complete, generating new image');
 
       // Step 2: DALL-E generation (50% → 100%)
-      const imageResponse = await fetch('http://localhost:3001/api/story/generate-cartoon-image', {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+      
+      const imageResponse = await fetch(`${baseUrl}/api/story/generate-cartoon-image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

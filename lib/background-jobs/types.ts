@@ -16,6 +16,8 @@ export interface BaseJobData {
   error_message?: string;
   retry_count: number;
   max_retries: number;
+  input_data: any;
+  result_data?: any;
 }
 
 // Storybook generation job
@@ -117,4 +119,5 @@ export interface JobUpdateData {
   result_data?: any;
   started_at?: string;
   completed_at?: string;
+  updated_at?: string;
 }

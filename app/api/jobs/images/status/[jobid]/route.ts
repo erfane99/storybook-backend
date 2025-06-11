@@ -5,12 +5,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { jobId: string } }
+  { params }: { params: { jobid: string } }
 ) {
   try {
-    const { jobId } = params;
+    const { jobid } = params;
 
-    if (!jobId) {
+    if (!jobid) {
       return NextResponse.json(
         { error: 'Job ID is required' },
         { status: 400 }
@@ -18,7 +18,7 @@ export async function GET(
     }
 
     // Get job status
-    const job = await jobManager.getJobStatus(jobId);
+    const job = await jobManager.getJobStatus(jobid);
 
     if (!job) {
       return NextResponse.json(

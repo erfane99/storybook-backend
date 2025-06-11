@@ -30,70 +30,47 @@ const handler: Handler = async (event) => {
     }
     
     // Initialize Supabase client
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    // Lock table name
-    const lockTable = 'job_processing_locks';
-    
-    // Check if table exists, create if not
-    const { error: tableCheckError } = await supabase
-      .from(lockTable)
-      .select('id')
-      .limit(1);
-    
-    if (tableCheckError && tableCheckError.code === '42P01') { // Table doesn't exist
-      // Create lock table
-      await supabase.rpc('create_job_lock_table');
+    if (!supabaseUrl || !supabaseKey) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Supabase configuration missing' }),
+      };
     }
+    
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // Lock table name - use a simple approach with a single row
+    const lockTable = 'background_jobs';
     
     // Handle lock action
     if (body.action === 'acquire') {
-      // Check if lock exists
-      const { data: existingLock, error: lockCheckError } = await supabase
-        .from(lockTable)
-        .select('*')
-        .eq('id', 'job_processing_lock')
-        .single();
+      // For simplicity, we'll use a comment in the background_jobs table
+      // In a real implementation, you might want a dedicated locks table
       
-      if (lockCheckError && lockCheckError.code !== 'PGRST116') { // PGRST116 = no rows returned
+      // Check if any jobs are currently being processed by another instance
+      const { data: processingJobs, error: lockCheckError } = await supabase
+        .from(lockTable)
+        .select('id')
+        .eq('status', 'processing')
+        .limit(1);
+      
+      if (lockCheckError) {
         throw new Error(`Lock check failed: ${lockCheckError.message}`);
       }
       
-      // If lock exists and is not expired
-      if (existingLock) {
-        const lockExpiry = new Date(existingLock.expires_at);
-        
-        if (lockExpiry > new Date()) {
-          // Lock is still valid
-          return {
-            statusCode: 200,
-            body: JSON.stringify({
-              locked: true,
-              owner: existingLock.owner,
-              expiresAt: existingLock.expires_at,
-            }),
-          };
-        }
-      }
-      
-      // Create or update lock
-      const expiresAt = new Date();
-      expiresAt.setSeconds(expiresAt.getSeconds() + 60); // 1 minute lock
-      
-      const { error: lockError } = await supabase
-        .from(lockTable)
-        .upsert({
-          id: 'job_processing_lock',
-          owner: body.processingId,
-          acquired_at: new Date().toISOString(),
-          expires_at: expiresAt.toISOString(),
-        });
-      
-      if (lockError) {
-        throw new Error(`Failed to acquire lock: ${lockError.message}`);
+      // Simple lock mechanism - if there are processing jobs, consider it locked
+      if (processingJobs && processingJobs.length > 0) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            locked: true,
+            owner: 'another-process',
+            reason: 'Jobs are currently being processed',
+          }),
+        };
       }
       
       return {
@@ -102,47 +79,17 @@ const handler: Handler = async (event) => {
           locked: false,
           acquired: true,
           owner: body.processingId,
-          expiresAt: expiresAt.toISOString(),
         }),
       };
     } else if (body.action === 'release') {
-      // Check if lock is owned by this process
-      const { data: existingLock, error: lockCheckError } = await supabase
-        .from(lockTable)
-        .select('*')
-        .eq('id', 'job_processing_lock')
-        .single();
-      
-      if (lockCheckError && lockCheckError.code !== 'PGRST116') { // PGRST116 = no rows returned
-        throw new Error(`Lock check failed: ${lockCheckError.message}`);
-      }
-      
-      // Only release if this process owns the lock
-      if (existingLock && existingLock.owner === body.processingId) {
-        const { error: releaseError } = await supabase
-          .from(lockTable)
-          .delete()
-          .eq('id', 'job_processing_lock');
-        
-        if (releaseError) {
-          throw new Error(`Failed to release lock: ${releaseError.message}`);
-        }
-        
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
-            released: true,
-            owner: body.processingId,
-          }),
-        };
-      }
+      // For the simple implementation, we don't need to do anything special
+      // The lock is automatically released when jobs complete
       
       return {
         statusCode: 200,
         body: JSON.stringify({
-          released: false,
-          reason: 'Lock not owned by this process',
-          owner: existingLock?.owner,
+          released: true,
+          owner: body.processingId,
         }),
       };
     }
@@ -151,7 +98,7 @@ const handler: Handler = async (event) => {
       statusCode: 400,
       body: JSON.stringify({ error: 'Invalid action' }),
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Lock function error:', error);
     
     return {

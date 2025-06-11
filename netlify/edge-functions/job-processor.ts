@@ -6,7 +6,7 @@ export default async (request: Request, context: Context) => {
     console.log('🔄 Edge function triggered for job processing');
     
     // Get site URL from context
-    const siteUrl = context.site.url || 'http://localhost:3001';
+    const siteUrl = context.site?.url || 'http://localhost:3001';
     
     // Create a unique ID for this processing run
     const processingId = `edge_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
@@ -44,7 +44,7 @@ export default async (request: Request, context: Context) => {
     
     // Perform health check first
     console.log('🏥 Performing health check');
-    const healthResponse = await fetch(`${siteUrl}/api/jobs/health/optimized`, {
+    const healthResponse = await fetch(`${siteUrl}/api/jobs/health`, {
       headers: {
         'User-Agent': 'netlify-edge-function',
       },
@@ -145,7 +145,7 @@ export default async (request: Request, context: Context) => {
         'Content-Type': 'application/json',
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Edge function error:', error);
     
     return new Response(JSON.stringify({
