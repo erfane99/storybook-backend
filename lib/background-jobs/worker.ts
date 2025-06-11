@@ -1,6 +1,13 @@
 import { jobProcessor } from './job-processor';
 import { jobManager } from './job-manager';
 
+interface ProcessingStats {
+  processed: number;
+  errors: number;
+  skipped: number;
+  details?: string[];
+}
+
 class BackgroundJobWorker {
   private isRunning = false;
   private intervalId: NodeJS.Timeout | null = null;
@@ -47,17 +54,13 @@ class BackgroundJobWorker {
   }
 
   // Process jobs manually (for testing or manual triggers)
-  async processJobs(maxJobs: number = 10): Promise<{
-    processed: number;
-    errors: number;
-    skipped: number;
-  }> {
+  async processJobs(maxJobs: number = 10): Promise<ProcessingStats> {
     if (!jobManager.isHealthy()) {
       console.warn('⚠️ Job manager not healthy, skipping processing');
       return { processed: 0, errors: 0, skipped: 1 };
     }
 
-    const stats = {
+    const stats: ProcessingStats = {
       processed: 0,
       errors: 0,
       skipped: 0,
@@ -80,7 +83,7 @@ class BackgroundJobWorker {
       const processingPromises = pendingJobs.map(async (job) => {
         try {
           // Set a timeout for each job processing
-          const timeoutPromise = new Promise((_, reject) => {
+          const timeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => reject(new Error('Job processing timeout')), this.maxRunTime);
           });
 
@@ -89,14 +92,16 @@ class BackgroundJobWorker {
           await Promise.race([processingPromise, timeoutPromise]);
           stats.processed++;
           
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error(`❌ Job processing failed: ${job.id}`, error);
           stats.errors++;
+          
+          const errorMessage = error instanceof Error ? error.message : 'Job processing failed';
           
           // Mark job as failed
           await jobManager.markJobFailed(
             job.id, 
-            error.message || 'Job processing failed', 
+            errorMessage, 
             true // Allow retry
           );
         }
@@ -107,7 +112,7 @@ class BackgroundJobWorker {
 
       console.log(`✅ Processing complete: ${stats.processed} processed, ${stats.errors} errors`);
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Worker processing error:', error);
       stats.errors++;
     }
@@ -133,7 +138,7 @@ class BackgroundJobWorker {
       console.log(`🔄 Processing specific job: ${jobId}`);
 
       // Process the job with timeout protection
-      const timeoutPromise = new Promise((_, reject) => {
+      const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Job processing timeout')), this.maxRunTime);
       });
 
@@ -144,13 +149,15 @@ class BackgroundJobWorker {
       console.log(`✅ Job processed successfully: ${jobId}`);
       return true;
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`❌ Failed to process job ${jobId}:`, error);
+      
+      const errorMessage = error instanceof Error ? error.message : 'Job processing failed';
       
       // Mark job as failed
       await jobManager.markJobFailed(
         jobId, 
-        error.message || 'Job processing failed', 
+        errorMessage, 
         true // Allow retry
       );
       
@@ -180,7 +187,7 @@ class BackgroundJobWorker {
       const cleaned = await jobManager.cleanupOldJobs(olderThanDays);
       console.log(`✅ Cleaned up ${cleaned} old jobs`);
       return cleaned;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Cleanup failed:', error);
       return 0;
     }
@@ -200,7 +207,7 @@ class BackgroundJobWorker {
           healthy: this.isHealthy(),
         },
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to get queue status:', error);
       return null;
     }

@@ -33,7 +33,7 @@ export async function GET() {
 
     // Get comprehensive health information
     const [healthReport, configSummary] = await Promise.all([
-      jobMonitor.generateHealthReport().catch(error => {
+      jobMonitor.generateHealthReport().catch((error: unknown) => {
         console.error('❌ Failed to generate health report:', error);
         return null;
       }),
@@ -108,13 +108,13 @@ export async function GET() {
     console.log(`✅ Health check completed - Status: ${overallStatus}`);
     return NextResponse.json(response, { status: httpStatus });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Health check failed:', error);
     
     return NextResponse.json({
       status: 'critical',
       message: 'Health check system failure',
-      error: error.message || 'Unknown error occurred',
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
       timestamp: new Date().toISOString(),
       recommendations: [
         'Check system logs for detailed error information',

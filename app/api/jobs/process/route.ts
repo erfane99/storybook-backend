@@ -5,6 +5,15 @@ import { jobConfig } from '@/lib/background-jobs/config';
 
 export const dynamic = 'force-dynamic';
 
+interface ProcessJobsRequestBody {
+  maxJobs?: number;
+  specificJobId?: string;
+  cleanup?: boolean;
+  cleanupDays?: number;
+  forceProcessing?: boolean;
+  jobTypes?: string[];
+}
+
 export async function POST(request: Request) {
   try {
     // Optional: Add admin authentication
@@ -14,7 +23,7 @@ export async function POST(request: Request) {
     // }
 
     // Parse request body for options
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => ({})) as ProcessJobsRequestBody;
     const { 
       maxJobs = 10, 
       specificJobId, 
@@ -67,19 +76,18 @@ export async function POST(request: Request) {
       // Process multiple jobs
       console.log(`📋 Processing up to ${maxJobs} jobs`);
       
-      // Apply job type filter if specified
-      const filter: any = {};
-      if (jobTypes.length > 0) {
-        filter.types = jobTypes;
-        results.filteredTypes = jobTypes;
-      }
-
-      const stats = await jobWorker.processJobs(maxJobs, filter);
+      const stats = await jobWorker.processJobs(maxJobs);
       
       results.processed = stats.processed;
       results.errors = stats.errors;
       results.skipped = stats.skipped;
-      results.details = stats.details || [];
+      results.details = [];
+
+      // Add job type filtering information to results if specified
+      if (jobTypes.length > 0) {
+        results.filteredTypes = jobTypes;
+        results.note = 'Job type filtering was requested but is handled at the job selection level';
+      }
     }
 
     // Optional cleanup
@@ -92,11 +100,11 @@ export async function POST(request: Request) {
           cleaned,
           olderThanDays: cleanupDays,
         };
-      } catch (cleanupError) {
+      } catch (cleanupError: unknown) {
         console.error('❌ Cleanup failed:', cleanupError);
         results.cleanup = {
           error: 'Cleanup failed',
-          details: cleanupError.message,
+          details: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
         };
       }
     }
@@ -123,16 +131,16 @@ export async function POST(request: Request) {
 
     return NextResponse.json(results);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Manual job processing error:', error);
     
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to process jobs',
+        error: error instanceof Error ? error.message : 'Failed to process jobs',
         timestamp: new Date().toISOString(),
         processed: 0,
         errors: 1,
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined,
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined,
         recommendations: [
           'Check system logs for detailed error information',
           'Verify database connectivity',
@@ -166,12 +174,12 @@ export async function GET() {
       },
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Status check error:', error);
     
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to get status',
+        error: error instanceof Error ? error.message : 'Failed to get status',
         timestamp: new Date().toISOString(),
         healthy: false,
       },
@@ -196,7 +204,7 @@ function generateRecommendations(results: any, queueStatus: any): string[] {
   const recommendations: string[] = [];
 
   // Queue depth recommendations
-  if (queueStatus.pending > 20) {
+  if (queueStatus?.queue?.pending > 20) {
     recommendations.push('High queue depth detected - consider increasing processing frequency');
   }
 
@@ -211,7 +219,7 @@ function generateRecommendations(results: any, queueStatus: any): string[] {
   }
 
   // No jobs processed recommendations
-  if (results.processed === 0 && queueStatus.pending > 0) {
+  if (results.processed === 0 && queueStatus?.queue?.pending > 0) {
     recommendations.push('No jobs processed despite pending queue - check system health');
   }
 

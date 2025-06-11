@@ -42,10 +42,15 @@ interface PerformanceMetrics {
   retryRate: number;
 }
 
+interface CachedMetric {
+  data: any;
+  timestamp: number;
+}
+
 class BackgroundJobMonitor {
   private supabase: ReturnType<typeof createClient> | null = null;
   private initialized = false;
-  private metricsCache: Map<string, any> = new Map();
+  private metricsCache: Map<string, CachedMetric> = new Map();
   private cacheTimeout = 60000; // 1 minute cache
 
   constructor() {
@@ -68,7 +73,7 @@ class BackgroundJobMonitor {
 
       this.initialized = true;
       console.log('✅ Background job monitor initialized');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to initialize background job monitor:', error);
     }
   }
@@ -93,7 +98,7 @@ class BackgroundJobMonitor {
 
       const now = new Date();
       const stats: JobStatistics = {
-        totalJobs: jobs.length,
+        totalJobs: jobs?.length || 0,
         pendingJobs: 0,
         processingJobs: 0,
         completedJobs: 0,
@@ -103,6 +108,8 @@ class BackgroundJobMonitor {
         queueDepth: 0,
         oldestPendingJob: undefined,
       };
+
+      if (!jobs) return stats;
 
       let totalProcessingTime = 0;
       let completedJobsWithTime = 0;
@@ -146,7 +153,7 @@ class BackgroundJobMonitor {
 
       this.setCachedMetric(cacheKey, stats);
       return stats;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to get job statistics:', error);
       throw error;
     }
@@ -170,6 +177,11 @@ class BackgroundJobMonitor {
       if (error) throw error;
 
       const typeStats: JobTypeStats = {};
+
+      if (!jobs) {
+        this.setCachedMetric(cacheKey, typeStats);
+        return typeStats;
+      }
 
       jobs.forEach(job => {
         if (!typeStats[job.type]) {
@@ -210,7 +222,7 @@ class BackgroundJobMonitor {
 
       this.setCachedMetric(cacheKey, typeStats);
       return typeStats;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to get job type statistics:', error);
       throw error;
     }
@@ -268,7 +280,7 @@ class BackgroundJobMonitor {
       }
 
       return health;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to assess system health:', error);
       return {
         status: 'critical',
@@ -304,6 +316,19 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
+      if (!recentJobs) {
+        const emptyMetrics: PerformanceMetrics = {
+          jobsPerHour: 0,
+          jobsPerDay: 0,
+          peakProcessingTime: 0,
+          resourceUtilization: 0,
+          errorFrequency: 0,
+          retryRate: 0,
+        };
+        this.setCachedMetric(cacheKey, emptyMetrics);
+        return emptyMetrics;
+      }
+
       const hourlyJobs = recentJobs.filter(job => new Date(job.created_at) >= oneHourAgo);
       const completedJobs = recentJobs.filter(job => job.status === 'completed');
       const failedJobs = recentJobs.filter(job => job.status === 'failed');
@@ -324,7 +349,7 @@ class BackgroundJobMonitor {
 
       this.setCachedMetric(cacheKey, metrics);
       return metrics;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to get performance metrics:', error);
       throw error;
     }
@@ -347,9 +372,9 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      console.log(`🔍 Found ${stuckJobs.length} potentially stuck jobs`);
-      return stuckJobs as JobData[];
-    } catch (error) {
+      console.log(`🔍 Found ${stuckJobs?.length || 0} potentially stuck jobs`);
+      return (stuckJobs as JobData[]) || [];
+    } catch (error: unknown) {
       console.error('❌ Failed to detect stuck jobs:', error);
       throw error;
     }
@@ -376,7 +401,7 @@ class BackgroundJobMonitor {
       const deletedCount = deletedJobs?.length || 0;
       console.log(`🧹 Cleaned up ${deletedCount} old jobs`);
       return deletedCount;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to cleanup old jobs:', error);
       throw error;
     }
@@ -408,7 +433,7 @@ class BackgroundJobMonitor {
         performanceMetrics,
         stuckJobs,
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Failed to generate health report:', error);
       throw error;
     }
@@ -444,7 +469,9 @@ class BackgroundJobMonitor {
   private calculateResourceUtilization(): number {
     // This would integrate with actual system metrics
     // For now, return a placeholder based on queue depth
-    return Math.min(100, (this.metricsCache.get('job-statistics')?.data?.queueDepth || 0) * 10);
+    const cachedStats = this.metricsCache.get('job-statistics');
+    const queueDepth = cachedStats?.data?.queueDepth || 0;
+    return Math.min(100, queueDepth * 10);
   }
 
   // Health check
