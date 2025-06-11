@@ -93,7 +93,7 @@ class BackgroundJobManager {
       input_data: inputData
     };
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Create storybook job',
       async (supabase) => {
         const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
@@ -101,7 +101,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`✅ Created storybook job: ${jobId}`);
       return jobId;
     }
@@ -131,7 +131,7 @@ class BackgroundJobManager {
       input_data: inputData
     };
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Create auto-story job',
       async (supabase) => {
         const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
@@ -139,7 +139,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`✅ Created auto-story job: ${jobId}`);
       return jobId;
     }
@@ -169,7 +169,7 @@ class BackgroundJobManager {
       input_data: inputData
     };
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Create scene job',
       async (supabase) => {
         const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
@@ -177,7 +177,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`✅ Created scene job: ${jobId}`);
       return jobId;
     }
@@ -207,7 +207,7 @@ class BackgroundJobManager {
       input_data: inputData
     };
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Create cartoonize job',
       async (supabase) => {
         const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
@@ -215,7 +215,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`✅ Created cartoonize job: ${jobId}`);
       return jobId;
     }
@@ -245,7 +245,7 @@ class BackgroundJobManager {
       input_data: inputData
     };
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Create image job',
       async (supabase) => {
         const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
@@ -253,7 +253,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`✅ Created image job: ${jobId}`);
       return jobId;
     }
@@ -263,7 +263,7 @@ class BackgroundJobManager {
 
   // Get job status and details
   async getJobStatus(jobId: string): Promise<JobData | null> {
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<JobData>(
       'Get job status',
       async (supabase) => {
         const response = await supabase.from('background_jobs').select('*').eq('id', jobId).single();
@@ -275,7 +275,7 @@ class BackgroundJobManager {
       console.log(`📊 Retrieved job status for: ${jobId}`);
     }
 
-    return result as JobData | null;
+    return result;
   }
 
   // Update job progress atomically
@@ -301,7 +301,7 @@ class BackgroundJobManager {
       }
     }
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Update job progress',
       async (supabase) => {
         const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
@@ -309,7 +309,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`📈 Updated job progress: ${jobId} -> ${progress}%`);
       return true;
     }
@@ -333,7 +333,7 @@ class BackgroundJobManager {
       updated_at: now
     };
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Mark job completed',
       async (supabase) => {
         const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
@@ -341,7 +341,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`✅ Marked job completed: ${jobId}`);
       return true;
     }
@@ -382,7 +382,7 @@ class BackgroundJobManager {
       updateData.progress = 0; // Reset progress for retry
     }
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Mark job failed',
       async (supabase) => {
         const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
@@ -390,7 +390,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       const action = canRetry ? 'scheduled for retry' : 'marked as failed';
       console.log(`❌ Job ${action}: ${jobId} - ${errorMessage}`);
       return true;
@@ -404,7 +404,7 @@ class BackgroundJobManager {
     filter: JobFilter = {},
     limit: number = 50
   ): Promise<JobData[]> {
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<JobData[]>(
       'Get pending jobs',
       async (supabase) => {
         let query = supabase
@@ -427,9 +427,9 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
-      console.log(`📋 Retrieved ${Array.isArray(result) ? result.length : 0} pending jobs`);
-      return Array.isArray(result) ? result as JobData[] : [];
+    if (result && Array.isArray(result)) {
+      console.log(`📋 Retrieved ${result.length} pending jobs`);
+      return result;
     }
 
     return [];
@@ -437,7 +437,7 @@ class BackgroundJobManager {
 
   // Get jobs by filter criteria
   async getJobs(filter: JobFilter = {}): Promise<JobData[]> {
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<JobData[]>(
       'Get jobs by filter',
       async (supabase) => {
         let query = supabase
@@ -470,9 +470,9 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
-      console.log(`📋 Retrieved ${Array.isArray(result) ? result.length : 0} jobs`);
-      return Array.isArray(result) ? result as JobData[] : [];
+    if (result && Array.isArray(result)) {
+      console.log(`📋 Retrieved ${result.length} jobs`);
+      return result;
     }
 
     return [];
@@ -487,7 +487,7 @@ class BackgroundJobManager {
       completed_at: new Date().toISOString()
     };
 
-    const result = await this.executeQuery(
+    const result = await this.executeQuery<{ id: string }>(
       'Cancel job',
       async (supabase) => {
         const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
@@ -495,7 +495,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result?.id) {
       console.log(`🚫 Cancelled job: ${jobId}`);
       return true;
     }
@@ -521,7 +521,7 @@ class BackgroundJobManager {
       }
     );
 
-    if (result) {
+    if (result && Array.isArray(result)) {
       const deletedCount = result.length;
       console.log(`🧹 Cleaned up ${deletedCount} old jobs`);
       return deletedCount;
@@ -551,7 +551,9 @@ class BackgroundJobManager {
     };
 
     jobs.forEach(job => {
-      stats[job.status]++;
+      if (job.status in stats) {
+        (stats as any)[job.status]++;
+      }
     });
 
     return stats;
