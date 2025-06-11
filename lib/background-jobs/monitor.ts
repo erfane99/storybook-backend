@@ -47,7 +47,23 @@ interface CachedMetric {
   timestamp: number;
 }
 
-// Define proper database row types to avoid unknown issues
+// Define specific database row types for different queries
+interface BasicJobRow {
+  status: string;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+interface TypedJobRow extends BasicJobRow {
+  type: string;
+}
+
+interface PerformanceJobRow extends BasicJobRow {
+  type: string;
+  retry_count: number;
+}
+
 interface DatabaseJobRow {
   status: string;
   created_at: string;
@@ -126,7 +142,7 @@ class BackgroundJobMonitor {
       let completedJobsWithTime = 0;
       let oldestPending: Date | undefined;
 
-      jobs.forEach((job: DatabaseJobRow) => {
+      jobs.forEach((job: BasicJobRow) => {
         switch (job.status) {
           case 'pending':
             stats.pendingJobs++;
@@ -196,7 +212,7 @@ class BackgroundJobMonitor {
         return typeStats;
       }
 
-      jobs.forEach((job: DatabaseJobRow) => {
+      jobs.forEach((job: TypedJobRow) => {
         const jobType = job.type as string;
         if (!typeStats[jobType]) {
           typeStats[jobType] = {
@@ -225,11 +241,11 @@ class BackgroundJobMonitor {
         stats.successRate = totalFinished > 0 ? (stats.completed / totalFinished) * 100 : 0;
 
         // Calculate average processing time for completed jobs
-        const completedJobs = jobs.filter((j: DatabaseJobRow) => 
+        const completedJobs = jobs.filter((j: TypedJobRow) => 
           j.type === type && j.status === 'completed' && j.started_at && j.completed_at
         );
         if (completedJobs.length > 0) {
-          const totalTime = completedJobs.reduce((sum, job: DatabaseJobRow) => {
+          const totalTime = completedJobs.reduce((sum, job: TypedJobRow) => {
             return sum + (new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
           }, 0);
           stats.averageTime = totalTime / completedJobs.length;
@@ -345,14 +361,14 @@ class BackgroundJobMonitor {
         return emptyMetrics;
       }
 
-      const hourlyJobs = recentJobs.filter((job: DatabaseJobRow) => new Date(job.created_at) >= oneHourAgo);
-      const completedJobs = recentJobs.filter((job: DatabaseJobRow) => job.status === 'completed');
-      const failedJobs = recentJobs.filter((job: DatabaseJobRow) => job.status === 'failed');
-      const retriedJobs = recentJobs.filter((job: DatabaseJobRow) => job.retry_count > 0);
+      const hourlyJobs = recentJobs.filter((job: PerformanceJobRow) => new Date(job.created_at) >= oneHourAgo);
+      const completedJobs = recentJobs.filter((job: PerformanceJobRow) => job.status === 'completed');
+      const failedJobs = recentJobs.filter((job: PerformanceJobRow) => job.status === 'failed');
+      const retriedJobs = recentJobs.filter((job: PerformanceJobRow) => job.retry_count > 0);
 
       const processingTimes = completedJobs
-        .filter((job: DatabaseJobRow) => job.started_at && job.completed_at)
-        .map((job: DatabaseJobRow) => new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
+        .filter((job: PerformanceJobRow) => job.started_at && job.completed_at)
+        .map((job: PerformanceJobRow) => new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
 
       const metrics: PerformanceMetrics = {
         jobsPerHour: hourlyJobs.length,
