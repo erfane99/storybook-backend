@@ -125,7 +125,7 @@ export async function POST(request: Request) {
     results.processed = processingStats.processed;
     results.errors = processingStats.errors;
     results.skipped = processingStats.skipped;
-    results.details = processingStats.details || [];
+    results.details = [];
 
     // Add job type filtering information to results if specified
     if (jobTypes.length > 0) {
