@@ -117,12 +117,15 @@ class BackgroundJobMonitor {
     }
 
     try {
-      const { data: jobs, error } = await this.supabase
+      const { data: rawJobs, error } = await this.supabase
         .from('background_jobs')
         .select('status, created_at, started_at, completed_at')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+
+      // Cast the response to the correct type
+      const jobs = rawJobs as BasicJobRow[] | null;
 
       const stats: JobStatistics = {
         totalJobs: jobs?.length || 0,
@@ -199,11 +202,14 @@ class BackgroundJobMonitor {
     }
 
     try {
-      const { data: jobs, error } = await this.supabase
+      const { data: rawJobs, error } = await this.supabase
         .from('background_jobs')
         .select('type, status, started_at, completed_at');
 
       if (error) throw error;
+
+      // Cast the response to the correct type
+      const jobs = rawJobs as TypedJobRow[] | null;
 
       const typeStats: JobTypeStats = {};
 
@@ -341,12 +347,15 @@ class BackgroundJobMonitor {
       const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-      const { data: recentJobs, error } = await this.supabase
+      const { data: rawJobs, error } = await this.supabase
         .from('background_jobs')
         .select('status, created_at, started_at, completed_at, retry_count')
         .gte('created_at', oneDayAgo.toISOString());
 
       if (error) throw error;
+
+      // Cast the response to the correct type
+      const recentJobs = rawJobs as PerformanceJobRow[] | null;
 
       if (!recentJobs || !Array.isArray(recentJobs)) {
         const emptyMetrics: PerformanceMetrics = {
@@ -396,7 +405,7 @@ class BackgroundJobMonitor {
     try {
       const stuckThreshold = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes ago
 
-      const { data: stuckJobs, error } = await this.supabase
+      const { data: rawStuckJobs, error } = await this.supabase
         .from('background_jobs')
         .select('*')
         .eq('status', 'processing')
@@ -404,8 +413,11 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
+      // Cast the response to the correct type
+      const stuckJobs = rawStuckJobs as JobData[] | null;
+
       console.log(`🔍 Found ${stuckJobs?.length || 0} potentially stuck jobs`);
-      return (stuckJobs as JobData[]) || [];
+      return stuckJobs || [];
     } catch (error: unknown) {
       console.error('❌ Failed to detect stuck jobs:', error);
       throw error;
@@ -421,7 +433,7 @@ class BackgroundJobMonitor {
     try {
       const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-      const { data: deletedJobs, error } = await this.supabase
+      const { data: rawDeletedJobs, error } = await this.supabase
         .from('background_jobs')
         .delete()
         .in('status', ['completed', 'failed', 'cancelled'])
@@ -429,6 +441,9 @@ class BackgroundJobMonitor {
         .select('id');
 
       if (error) throw error;
+
+      // Cast the response to the correct type
+      const deletedJobs = rawDeletedJobs as Array<{ id: string }> | null;
 
       const deletedCount = deletedJobs?.length || 0;
       console.log(`🧹 Cleaned up ${deletedCount} old jobs`);
