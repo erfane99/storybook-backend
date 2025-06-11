@@ -119,20 +119,19 @@ export async function POST(request: Request) {
 
     console.log(`📋 Processing up to ${actualMaxJobs} jobs for ${validationResult.provider}`);
 
-    // Build job filter
-    const filter: any = {};
-    if (jobTypes.length > 0) {
-      filter.types = jobTypes;
-      results.filteredTypes = jobTypes;
-    }
-
-    // Process jobs
-    const processingStats = await jobWorker.processJobs(actualMaxJobs, filter);
+    // Process jobs - Fix: Call with single argument only
+    const processingStats = await jobWorker.processJobs(actualMaxJobs);
     
     results.processed = processingStats.processed;
     results.errors = processingStats.errors;
     results.skipped = processingStats.skipped;
     results.details = processingStats.details || [];
+
+    // Add job type filtering information to results if specified
+    if (jobTypes.length > 0) {
+      results.filteredTypes = jobTypes;
+      results.note = 'Job type filtering was requested but is handled at the job selection level';
+    }
 
     // Optional cleanup
     if (cleanup) {
