@@ -508,7 +508,7 @@ class BackgroundJobManager {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
 
-    const result = await this.executeQuery<any[]>(
+    const result = await this.executeQuery<Array<{ id: string }>>(
       'Cleanup old jobs',
       async (supabase) => {
         const response = await supabase
@@ -522,7 +522,7 @@ class BackgroundJobManager {
     );
 
     if (result) {
-      const deletedCount = Array.isArray(result) ? result.length : 0;
+      const deletedCount = result.length;
       console.log(`🧹 Cleaned up ${deletedCount} old jobs`);
       return deletedCount;
     }
