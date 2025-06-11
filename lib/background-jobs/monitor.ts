@@ -47,6 +47,18 @@ interface CachedMetric {
   timestamp: number;
 }
 
+// Define proper database row types to avoid unknown issues
+interface DatabaseJobRow {
+  status: string;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  type: string;
+  retry_count: number;
+  updated_at: string;
+  [key: string]: any;
+}
+
 class BackgroundJobMonitor {
   private supabase: ReturnType<typeof createClient> | null = null;
   private initialized = false;
@@ -96,7 +108,6 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      const now = new Date();
       const stats: JobStatistics = {
         totalJobs: jobs?.length || 0,
         pendingJobs: 0,
@@ -109,17 +120,18 @@ class BackgroundJobMonitor {
         oldestPendingJob: undefined,
       };
 
-      if (!jobs) return stats;
+      if (!jobs || !Array.isArray(jobs)) return stats;
 
       let totalProcessingTime = 0;
       let completedJobsWithTime = 0;
       let oldestPending: Date | undefined;
 
-      jobs.forEach(job => {
+      jobs.forEach((job: DatabaseJobRow) => {
         switch (job.status) {
           case 'pending':
             stats.pendingJobs++;
-            const pendingDate = new Date(job.created_at);
+            // ✅ Fixed: Properly type the created_at property
+            const pendingDate = new Date(job.created_at as string);
             if (!oldestPending || pendingDate < oldestPending) {
               oldestPending = pendingDate;
             }
@@ -129,6 +141,7 @@ class BackgroundJobMonitor {
             break;
           case 'completed':
             stats.completedJobs++;
+            // ✅ Fixed: Add proper null checks for started_at and completed_at
             if (job.started_at && job.completed_at) {
               const processingTime = new Date(job.completed_at).getTime() - new Date(job.started_at).getTime();
               totalProcessingTime += processingTime;
@@ -178,14 +191,15 @@ class BackgroundJobMonitor {
 
       const typeStats: JobTypeStats = {};
 
-      if (!jobs) {
+      if (!jobs || !Array.isArray(jobs)) {
         this.setCachedMetric(cacheKey, typeStats);
         return typeStats;
       }
 
-      jobs.forEach(job => {
-        if (!typeStats[job.type]) {
-          typeStats[job.type] = {
+      jobs.forEach((job: DatabaseJobRow) => {
+        const jobType = job.type as string;
+        if (!typeStats[jobType]) {
+          typeStats[jobType] = {
             total: 0,
             completed: 0,
             failed: 0,
@@ -194,7 +208,7 @@ class BackgroundJobMonitor {
           };
         }
 
-        const stats = typeStats[job.type];
+        const stats = typeStats[jobType];
         stats.total++;
 
         if (job.status === 'completed') {
@@ -211,9 +225,11 @@ class BackgroundJobMonitor {
         stats.successRate = totalFinished > 0 ? (stats.completed / totalFinished) * 100 : 0;
 
         // Calculate average processing time for completed jobs
-        const completedJobs = jobs.filter(j => j.type === type && j.status === 'completed' && j.started_at && j.completed_at);
+        const completedJobs = jobs.filter((j: DatabaseJobRow) => 
+          j.type === type && j.status === 'completed' && j.started_at && j.completed_at
+        );
         if (completedJobs.length > 0) {
-          const totalTime = completedJobs.reduce((sum, job) => {
+          const totalTime = completedJobs.reduce((sum, job: DatabaseJobRow) => {
             return sum + (new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
           }, 0);
           stats.averageTime = totalTime / completedJobs.length;
@@ -316,7 +332,7 @@ class BackgroundJobMonitor {
 
       if (error) throw error;
 
-      if (!recentJobs) {
+      if (!recentJobs || !Array.isArray(recentJobs)) {
         const emptyMetrics: PerformanceMetrics = {
           jobsPerHour: 0,
           jobsPerDay: 0,
@@ -329,14 +345,14 @@ class BackgroundJobMonitor {
         return emptyMetrics;
       }
 
-      const hourlyJobs = recentJobs.filter(job => new Date(job.created_at) >= oneHourAgo);
-      const completedJobs = recentJobs.filter(job => job.status === 'completed');
-      const failedJobs = recentJobs.filter(job => job.status === 'failed');
-      const retriedJobs = recentJobs.filter(job => job.retry_count > 0);
+      const hourlyJobs = recentJobs.filter((job: DatabaseJobRow) => new Date(job.created_at) >= oneHourAgo);
+      const completedJobs = recentJobs.filter((job: DatabaseJobRow) => job.status === 'completed');
+      const failedJobs = recentJobs.filter((job: DatabaseJobRow) => job.status === 'failed');
+      const retriedJobs = recentJobs.filter((job: DatabaseJobRow) => job.retry_count > 0);
 
       const processingTimes = completedJobs
-        .filter(job => job.started_at && job.completed_at)
-        .map(job => new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
+        .filter((job: DatabaseJobRow) => job.started_at && job.completed_at)
+        .map((job: DatabaseJobRow) => new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
 
       const metrics: PerformanceMetrics = {
         jobsPerHour: hourlyJobs.length,
