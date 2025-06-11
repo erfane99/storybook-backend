@@ -95,7 +95,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Create storybook job',
-      (supabase) => supabase.from('background_jobs').insert(jobData).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -130,7 +133,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Create auto-story job',
-      (supabase) => supabase.from('background_jobs').insert(jobData).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -165,7 +171,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Create scene job',
-      (supabase) => supabase.from('background_jobs').insert(jobData).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -200,7 +209,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Create cartoonize job',
-      (supabase) => supabase.from('background_jobs').insert(jobData).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -235,7 +247,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Create image job',
-      (supabase) => supabase.from('background_jobs').insert(jobData).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').insert(jobData).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -250,7 +265,10 @@ class BackgroundJobManager {
   async getJobStatus(jobId: string): Promise<JobData | null> {
     const result = await this.executeQuery(
       'Get job status',
-      (supabase) => supabase.from('background_jobs').select('*').eq('id', jobId).single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').select('*').eq('id', jobId).single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -285,7 +303,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Update job progress',
-      (supabase) => supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -314,7 +335,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Mark job completed',
-      (supabase) => supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -360,7 +384,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Mark job failed',
-      (supabase) => supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -379,7 +406,7 @@ class BackgroundJobManager {
   ): Promise<JobData[]> {
     const result = await this.executeQuery(
       'Get pending jobs',
-      (supabase) => {
+      async (supabase) => {
         let query = supabase
           .from('background_jobs')
           .select('*')
@@ -395,7 +422,8 @@ class BackgroundJobManager {
           query = query.eq('type', filter.type);
         }
 
-        return query;
+        const response = await query;
+        return { data: response.data, error: response.error };
       }
     );
 
@@ -411,7 +439,7 @@ class BackgroundJobManager {
   async getJobs(filter: JobFilter = {}): Promise<JobData[]> {
     const result = await this.executeQuery(
       'Get jobs by filter',
-      (supabase) => {
+      async (supabase) => {
         let query = supabase
           .from('background_jobs')
           .select('*')
@@ -437,7 +465,8 @@ class BackgroundJobManager {
           query = query.range(filter.offset, filter.offset + (filter.limit || 50) - 1);
         }
 
-        return query;
+        const response = await query;
+        return { data: response.data, error: response.error };
       }
     );
 
@@ -460,7 +489,10 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Cancel job',
-      (supabase) => supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single()
+      async (supabase) => {
+        const response = await supabase.from('background_jobs').update(updateData).eq('id', jobId).select('id').single();
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
@@ -478,11 +510,14 @@ class BackgroundJobManager {
 
     const result = await this.executeQuery(
       'Cleanup old jobs',
-      (supabase) => supabase
-        .from('background_jobs')
-        .delete()
-        .in('status', ['completed', 'failed', 'cancelled'])
-        .lt('completed_at', cutoffDate.toISOString())
+      async (supabase) => {
+        const response = await supabase
+          .from('background_jobs')
+          .delete()
+          .in('status', ['completed', 'failed', 'cancelled'])
+          .lt('completed_at', cutoffDate.toISOString());
+        return { data: response.data, error: response.error };
+      }
     );
 
     if (result) {
