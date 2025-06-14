@@ -21,42 +21,6 @@ const JOB_TABLE_MAP: Record<JobType, string> = {
   'image-generation': 'image_generation_jobs'
 };
 
-// Field mapping from unified interface to table-specific fields
-const FIELD_MAPPINGS: Record<JobType, Record<string, string>> = {
-  'cartoonize': {
-    'input_data.prompt': 'original_image_data',
-    'input_data.style': 'style',
-    'input_data.imageUrl': 'original_cloudinary_url',
-    'result_data.url': 'generated_image_url',
-    'result_data.cached': 'final_cloudinary_url'
-  },
-  'auto-story': {
-    'input_data.genre': 'genre',
-    'input_data.characterDescription': 'character_description',
-    'input_data.cartoonImageUrl': 'cartoon_image_url',
-    'input_data.audience': 'audience',
-    'result_data.storybook_id': 'storybook_entry_id',
-    'result_data.generated_story': 'generated_story'
-  },
-  'image-generation': {
-    'input_data.image_prompt': 'image_prompt',
-    'input_data.character_description': 'character_description',
-    'input_data.emotion': 'emotion',
-    'input_data.audience': 'audience',
-    'input_data.isReusedImage': 'is_reused_image',
-    'input_data.cartoon_image': 'cartoon_image',
-    'input_data.style': 'style',
-    'result_data.url': 'generated_image_url',
-    'result_data.prompt_used': 'final_prompt_used'
-  },
-  'storybook': {
-    // Will be mapped based on storybook_jobs table structure
-  },
-  'scenes': {
-    // Will be mapped based on scene_generation_jobs table structure
-  }
-};
-
 class BackgroundJobManager {
   private supabase: SupabaseClient | null = null;
   private initialized = false;
@@ -73,52 +37,7 @@ class BackgroundJobManager {
       if (!supabaseUrl || !supabaseKey) {
         console.warn('⚠️ Supabase environment variables not configured for job management');
         return;
-      } else if (jobType === 'storybook') {
-      baseJob.input_data = {
-        title: tableData.title,
-        story: tableData.story,
-        characterImage: tableData.character_image,
-        pages: tableData.pages,
-        audience: tableData.audience,
-        isReusedImage: tableData.is_reused_image
-      };
-      if (tableData.storybook_entry_id) {
-        baseJob.result_data = {
-          storybook_id: tableData.storybook_entry_id,
-          pages: tableData.pages,
-          has_errors: false
-        };
       }
-    } else if (jobType === 'scenes') {
-      baseJob.input_data = {
-        story: tableData.story,
-        characterImage: tableData.character_image,
-        audience: tableData.audience
-      };
-      if (tableData.generated_scenes) {
-        baseJob.result_data = {
-          pages: tableData.generated_scenes,
-          character_description: tableData.character_description
-        };
-      }
-    } else if (job.type === 'storybook') {
-      tableData.title = jobData.input_data?.title;
-      tableData.story = jobData.input_data?.story;
-      tableData.character_image = jobData.input_data?.characterImage;
-      tableData.pages = jobData.input_data?.pages;
-      tableData.audience = jobData.input_data?.audience;
-      tableData.is_reused_image = jobData.input_data?.isReusedImage;
-      if (jobData.result_data?.storybook_id) {
-        tableData.storybook_entry_id = jobData.result_data.storybook_id;
-      }
-    } else if (job.type === 'scenes') {
-      tableData.story = jobData.input_data?.story;
-      tableData.character_image = jobData.input_data?.characterImage;
-      tableData.audience = jobData.input_data?.audience;
-      if (jobData.result_data?.pages) {
-        tableData.generated_scenes = jobData.result_data.pages;
-      }
-    }
 
       this.supabase = createClient(supabaseUrl, supabaseKey, {
         auth: { persistSession: false }
@@ -141,12 +60,9 @@ class BackgroundJobManager {
 
   // Convert unified job data to table-specific format
   private mapToTableFormat(jobType: JobType, jobData: any): any {
-    const tableName = this.getTableName(jobType);
-    const mappings = FIELD_MAPPINGS[jobType] || {};
-    
     // Start with common fields that exist in all job tables
     const tableData: any = {
-      id: jobData.id, // Keep the generated string ID in a text field if table supports it
+      id: jobData.id,
       user_id: jobData.user_id,
       status: jobData.status,
       progress: jobData.progress,
@@ -160,7 +76,7 @@ class BackgroundJobManager {
       completed_at: jobData.completed_at
     };
 
-    // Add job-type specific fields based on mappings
+    // Add job-type specific fields
     if (jobType === 'cartoonize') {
       tableData.original_image_data = jobData.input_data?.prompt || '';
       tableData.style = jobData.input_data?.style || 'cartoon';
@@ -186,6 +102,23 @@ class BackgroundJobManager {
       tableData.style = jobData.input_data?.style;
       if (jobData.result_data?.url) {
         tableData.generated_image_url = jobData.result_data.url;
+      }
+    } else if (jobType === 'storybook') {
+      tableData.title = jobData.input_data?.title;
+      tableData.story = jobData.input_data?.story;
+      tableData.character_image = jobData.input_data?.characterImage;
+      tableData.pages = jobData.input_data?.pages;
+      tableData.audience = jobData.input_data?.audience;
+      tableData.is_reused_image = jobData.input_data?.isReusedImage;
+      if (jobData.result_data?.storybook_id) {
+        tableData.storybook_entry_id = jobData.result_data.storybook_id;
+      }
+    } else if (jobType === 'scenes') {
+      tableData.story = jobData.input_data?.story;
+      tableData.character_image = jobData.input_data?.characterImage;
+      tableData.audience = jobData.input_data?.audience;
+      if (jobData.result_data?.pages) {
+        tableData.generated_scenes = jobData.result_data.pages;
       }
     }
 
@@ -253,6 +186,34 @@ class BackgroundJobManager {
           url: tableData.generated_image_url,
           prompt_used: tableData.final_prompt_used || tableData.image_prompt,
           reused: tableData.is_reused_image || false
+        };
+      }
+    } else if (jobType === 'storybook') {
+      baseJob.input_data = {
+        title: tableData.title,
+        story: tableData.story,
+        characterImage: tableData.character_image,
+        pages: tableData.pages,
+        audience: tableData.audience,
+        isReusedImage: tableData.is_reused_image
+      };
+      if (tableData.storybook_entry_id) {
+        baseJob.result_data = {
+          storybook_id: tableData.storybook_entry_id,
+          pages: tableData.pages,
+          has_errors: false
+        };
+      }
+    } else if (jobType === 'scenes') {
+      baseJob.input_data = {
+        story: tableData.story,
+        characterImage: tableData.character_image,
+        audience: tableData.audience
+      };
+      if (tableData.generated_scenes) {
+        baseJob.result_data = {
+          pages: tableData.generated_scenes,
+          character_description: tableData.character_description
         };
       }
     }
@@ -611,6 +572,12 @@ class BackgroundJobManager {
       if (resultData.cached) {
         updateData.final_cloudinary_url = resultData.url;
       }
+    } else if (job.type === 'auto-story' && resultData?.storybook_id) {
+      updateData.storybook_entry_id = resultData.storybook_id;
+      updateData.generated_story = resultData.generated_story;
+    } else if (job.type === 'image-generation' && resultData?.url) {
+      updateData.generated_image_url = resultData.url;
+      updateData.final_prompt_used = resultData.prompt_used;
     }
 
     const result = await this.executeQuery<{ id: string }>(
@@ -814,6 +781,40 @@ class BackgroundJobManager {
     }
 
     return false;
+  }
+
+  // Clean up old jobs across all tables
+  async cleanupOldJobs(olderThanDays: number = 30): Promise<number> {
+    let totalCleaned = 0;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+    const cutoffIso = cutoffDate.toISOString();
+
+    const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+    
+    for (const jobType of jobTypes) {
+      const tableName = this.getTableName(jobType);
+      
+      const result = await this.executeQuery<any[]>(
+        `Clean up old jobs from ${tableName}`,
+        async (supabase) => {
+          const response = await supabase
+            .from(tableName)
+            .delete()
+            .lt('created_at', cutoffIso)
+            .in('status', ['completed', 'failed', 'cancelled'])
+            .select('id');
+          return { data: response.data, error: response.error };
+        }
+      );
+
+      if (result && Array.isArray(result)) {
+        totalCleaned += result.length;
+      }
+    }
+
+    console.log(`🧹 Cleaned up ${totalCleaned} old jobs`);
+    return totalCleaned;
   }
 
   // Get job statistics across all job tables
