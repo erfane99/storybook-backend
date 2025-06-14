@@ -73,7 +73,52 @@ class BackgroundJobManager {
       if (!supabaseUrl || !supabaseKey) {
         console.warn('⚠️ Supabase environment variables not configured for job management');
         return;
+      } else if (jobType === 'storybook') {
+      baseJob.input_data = {
+        title: tableData.title,
+        story: tableData.story,
+        characterImage: tableData.character_image,
+        pages: tableData.pages,
+        audience: tableData.audience,
+        isReusedImage: tableData.is_reused_image
+      };
+      if (tableData.storybook_entry_id) {
+        baseJob.result_data = {
+          storybook_id: tableData.storybook_entry_id,
+          pages: tableData.pages,
+          has_errors: false
+        };
       }
+    } else if (jobType === 'scenes') {
+      baseJob.input_data = {
+        story: tableData.story,
+        characterImage: tableData.character_image,
+        audience: tableData.audience
+      };
+      if (tableData.generated_scenes) {
+        baseJob.result_data = {
+          pages: tableData.generated_scenes,
+          character_description: tableData.character_description
+        };
+      }
+    } else if (job.type === 'storybook') {
+      tableData.title = jobData.input_data?.title;
+      tableData.story = jobData.input_data?.story;
+      tableData.character_image = jobData.input_data?.characterImage;
+      tableData.pages = jobData.input_data?.pages;
+      tableData.audience = jobData.input_data?.audience;
+      tableData.is_reused_image = jobData.input_data?.isReusedImage;
+      if (jobData.result_data?.storybook_id) {
+        tableData.storybook_entry_id = jobData.result_data.storybook_id;
+      }
+    } else if (job.type === 'scenes') {
+      tableData.story = jobData.input_data?.story;
+      tableData.character_image = jobData.input_data?.characterImage;
+      tableData.audience = jobData.input_data?.audience;
+      if (jobData.result_data?.pages) {
+        tableData.generated_scenes = jobData.result_data.pages;
+      }
+    }
 
       this.supabase = createClient(supabaseUrl, supabaseKey, {
         auth: { persistSession: false }
@@ -237,6 +282,182 @@ class BackgroundJobManager {
       console.error(`❌ ${operation} error:`, error);
       return null;
     }
+  }
+
+  // Create auto-story job using existing auto_story_jobs table
+  async createAutoStoryJob(
+    inputData: AutoStoryJobData['input_data'],
+    userId?: string
+  ): Promise<string | null> {
+    const jobId = this.generateJobId();
+    const now = new Date().toISOString();
+
+    const jobData: AutoStoryJobData = {
+      id: jobId,
+      type: 'auto-story',
+      status: 'pending',
+      progress: 0,
+      current_step: 'Initializing auto-story generation',
+      user_id: userId,
+      created_at: now,
+      updated_at: now,
+      retry_count: 0,
+      max_retries: 3,
+      input_data: inputData
+    };
+
+    const tableData = this.mapToTableFormat('auto-story', jobData);
+
+    const result = await this.executeQuery<{ id: string }>(
+      'Create auto-story job',
+      async (supabase) => {
+        const response = await supabase
+          .from('auto_story_jobs')
+          .insert(tableData)
+          .select('id')
+          .single();
+        return { data: response.data, error: response.error };
+      }
+    );
+
+    if (result?.id) {
+      console.log(`✅ Created auto-story job: ${jobId}`);
+      return jobId;
+    }
+
+    return null;
+  }
+
+  // Create storybook job using existing storybook_jobs table
+  async createStorybookJob(
+    inputData: StorybookJobData['input_data'],
+    userId?: string
+  ): Promise<string | null> {
+    const jobId = this.generateJobId();
+    const now = new Date().toISOString();
+
+    const jobData: StorybookJobData = {
+      id: jobId,
+      type: 'storybook',
+      status: 'pending',
+      progress: 0,
+      current_step: 'Initializing storybook generation',
+      user_id: userId,
+      created_at: now,
+      updated_at: now,
+      retry_count: 0,
+      max_retries: 3,
+      input_data: inputData
+    };
+
+    const tableData = this.mapToTableFormat('storybook', jobData);
+
+    const result = await this.executeQuery<{ id: string }>(
+      'Create storybook job',
+      async (supabase) => {
+        const response = await supabase
+          .from('storybook_jobs')
+          .insert(tableData)
+          .select('id')
+          .single();
+        return { data: response.data, error: response.error };
+      }
+    );
+
+    if (result?.id) {
+      console.log(`✅ Created storybook job: ${jobId}`);
+      return jobId;
+    }
+
+    return null;
+  }
+
+  // Create scene job using existing scene_generation_jobs table
+  async createSceneJob(
+    inputData: SceneJobData['input_data'],
+    userId?: string
+  ): Promise<string | null> {
+    const jobId = this.generateJobId();
+    const now = new Date().toISOString();
+
+    const jobData: SceneJobData = {
+      id: jobId,
+      type: 'scenes',
+      status: 'pending',
+      progress: 0,
+      current_step: 'Initializing scene generation',
+      user_id: userId,
+      created_at: now,
+      updated_at: now,
+      retry_count: 0,
+      max_retries: 3,
+      input_data: inputData
+    };
+
+    const tableData = this.mapToTableFormat('scenes', jobData);
+
+    const result = await this.executeQuery<{ id: string }>(
+      'Create scene job',
+      async (supabase) => {
+        const response = await supabase
+          .from('scene_generation_jobs')
+          .insert(tableData)
+          .select('id')
+          .single();
+        return { data: response.data, error: response.error };
+      }
+    );
+
+    if (result?.id) {
+      console.log(`✅ Created scene job: ${jobId}`);
+      return jobId;
+    }
+
+    return null;
+  }
+
+  // Create image job using existing image_generation_jobs table
+  async createImageJob(
+    inputData: ImageJobData['input_data'],
+    userId?: string
+  ): Promise<string | null> {
+    const jobId = this.generateJobId();
+    const now = new Date().toISOString();
+
+    const jobData: ImageJobData = {
+      id: jobId,
+      type: 'image-generation',
+      status: 'pending',
+      progress: 0,
+      current_step: 'Initializing image generation',
+      user_id: userId,
+      created_at: now,
+      updated_at: now,
+      retry_count: 0,
+      max_retries: 3,
+      input_data: inputData
+    };
+
+    const tableData = this.mapToTableFormat('image-generation', jobData);
+
+    const result = await this.executeQuery<{ id: string }>(
+      'Create image job',
+      async (supabase) => {
+        const response = await supabase
+          .from('image_generation_jobs')
+          .insert(tableData)
+          .select('id')
+          .single();
+        return { data: response.data, error: response.error };
+      }
+    );
+
+    if (result?.id) {
+      console.log(`✅ Created image job: ${jobId}`);
+      return jobId;
+    }
+
+    return null;
   }
 
   // Create cartoonize job using existing cartoonize_jobs table
@@ -461,6 +682,134 @@ class BackgroundJobManager {
     if (result?.id) {
       const action = canRetry ? 'scheduled for retry' : 'marked as failed';
       console.log(`❌ Job ${action}: ${jobId} - ${errorMessage}`);
+      return true;
+    }
+
+    return false;
+  }
+
+  // Get pending jobs across all job tables
+  async getPendingJobs(
+    filter: JobFilter = {},
+    limit: number = 50
+  ): Promise<JobData[]> {
+    const allPendingJobs: JobData[] = [];
+    const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+    
+    for (const jobType of jobTypes) {
+      const tableName = this.getTableName(jobType);
+      
+      const result = await this.executeQuery<any[]>(
+        `Get pending jobs from ${tableName}`,
+        async (supabase) => {
+          let query = supabase
+            .from(tableName)
+            .select('*')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: true })
+            .limit(Math.ceil(limit / jobTypes.length)); // Distribute limit across tables
+
+          if (filter.user_id) {
+            query = query.eq('user_id', filter.user_id);
+          }
+
+          const response = await query;
+          return { data: response.data, error: response.error };
+        }
+      );
+
+      if (result && Array.isArray(result)) {
+        const convertedJobs = result.map(job => this.mapFromTableFormat(jobType, job));
+        allPendingJobs.push(...convertedJobs);
+      }
+    }
+
+    // Sort by created_at and apply final limit
+    allPendingJobs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const finalJobs = allPendingJobs.slice(0, limit);
+
+    console.log(`📋 Retrieved ${finalJobs.length} pending jobs`);
+    return finalJobs;
+  }
+
+  // Get jobs by filter criteria across all tables
+  async getJobs(filter: JobFilter = {}): Promise<JobData[]> {
+    const allJobs: JobData[] = [];
+    const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+    
+    for (const jobType of jobTypes) {
+      const tableName = this.getTableName(jobType);
+      
+      const result = await this.executeQuery<any[]>(
+        `Get jobs from ${tableName}`,
+        async (supabase) => {
+          let query = supabase
+            .from(tableName)
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (filter.user_id) {
+            query = query.eq('user_id', filter.user_id);
+          }
+
+          if (filter.status) {
+            query = query.eq('status', filter.status);
+          }
+
+          if (filter.limit) {
+            query = query.limit(Math.ceil(filter.limit / jobTypes.length));
+          }
+
+          const response = await query;
+          return { data: response.data, error: response.error };
+        }
+      );
+
+      if (result && Array.isArray(result)) {
+        const convertedJobs = result.map(job => this.mapFromTableFormat(jobType, job));
+        allJobs.push(...convertedJobs);
+      }
+    }
+
+    // Sort by created_at descending and apply final limit
+    allJobs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const finalJobs = filter.limit ? allJobs.slice(0, filter.limit) : allJobs;
+
+    console.log(`📋 Retrieved ${finalJobs.length} jobs`);
+    return finalJobs;
+  }
+
+  // Cancel a job across all tables
+  async cancelJob(jobId: string): Promise<boolean> {
+    const job = await this.getJobStatus(jobId);
+    if (!job) {
+      console.error(`❌ Cannot cancel - job not found: ${jobId}`);
+      return false;
+    }
+
+    const tableName = this.getTableName(job.type);
+    const updateData: any = {
+      status: 'cancelled',
+      current_step: 'Cancelled by user',
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString()
+    };
+
+    const result = await this.executeQuery<{ id: string }>(
+      'Cancel job',
+      async (supabase) => {
+        const response = await supabase
+          .from(tableName)
+          .update(updateData)
+          .eq('id', jobId)
+          .select('id')
+          .single();
+        return { data: response.data, error: response.error };
+      }
+    );
+
+    if (result?.id) {
+      console.log(`🚫 Cancelled job: ${jobId}`);
       return true;
     }
 
