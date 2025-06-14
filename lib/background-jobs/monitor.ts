@@ -47,33 +47,14 @@ interface CachedMetric {
   timestamp: number;
 }
 
-// Define specific database row types for different queries
-interface BasicJobRow {
-  status: string;
-  created_at: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-}
-
-interface TypedJobRow extends BasicJobRow {
-  type: string;
-}
-
-interface PerformanceJobRow extends BasicJobRow {
-  type: string;
-  retry_count: number;
-}
-
-interface DatabaseJobRow {
-  status: string;
-  created_at: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-  type: string;
-  retry_count: number;
-  updated_at: string;
-  [key: string]: any;
-}
+// Database table mapping for each job type
+const JOB_TABLE_MAP: Record<JobType, string> = {
+  'storybook': 'storybook_jobs',
+  'auto-story': 'auto_story_jobs',
+  'scenes': 'scene_generation_jobs',
+  'cartoonize': 'cartoonize_jobs',
+  'image-generation': 'image_generation_jobs'
+};
 
 class BackgroundJobMonitor {
   private supabase: ReturnType<typeof createClient> | null = null;
@@ -106,7 +87,7 @@ class BackgroundJobMonitor {
     }
   }
 
-  // Get comprehensive job statistics
+  // Get comprehensive job statistics across all job tables
   async getJobStatistics(): Promise<JobStatistics> {
     const cacheKey = 'job-statistics';
     const cached = this.getCachedMetric(cacheKey);
@@ -117,18 +98,8 @@ class BackgroundJobMonitor {
     }
 
     try {
-      const { data: rawJobs, error } = await this.supabase
-        .from('background_jobs')
-        .select('status, created_at, started_at, completed_at')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Cast the response to the correct type using double assertion
-      const jobs = (rawJobs as unknown) as BasicJobRow[] | null;
-
       const stats: JobStatistics = {
-        totalJobs: jobs?.length || 0,
+        totalJobs: 0,
         pendingJobs: 0,
         processingJobs: 0,
         completedJobs: 0,
@@ -139,40 +110,61 @@ class BackgroundJobMonitor {
         oldestPendingJob: undefined,
       };
 
-      if (!jobs || !Array.isArray(jobs)) return stats;
-
       let totalProcessingTime = 0;
       let completedJobsWithTime = 0;
       let oldestPending: Date | undefined;
 
-      jobs.forEach((job: BasicJobRow) => {
-        switch (job.status) {
-          case 'pending':
-            stats.pendingJobs++;
-            // ✅ Fixed: Properly type the created_at property
-            const pendingDate = new Date(job.created_at as string);
-            if (!oldestPending || pendingDate < oldestPending) {
-              oldestPending = pendingDate;
+      // Query each job table separately
+      const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+      
+      for (const jobType of jobTypes) {
+        const tableName = JOB_TABLE_MAP[jobType];
+        
+        try {
+          const { data: jobs, error } = await this.supabase
+            .from(tableName)
+            .select('status, created_at, started_at, completed_at')
+            .order('created_at', { ascending: false });
+
+          if (error) {
+            console.warn(`⚠️ Failed to query ${tableName}:`, error);
+            continue;
+          }
+
+          if (!jobs || !Array.isArray(jobs)) continue;
+
+          jobs.forEach((job: any) => {
+            stats.totalJobs++;
+
+            switch (job.status) {
+              case 'pending':
+                stats.pendingJobs++;
+                const pendingDate = new Date(job.created_at);
+                if (!oldestPending || pendingDate < oldestPending) {
+                  oldestPending = pendingDate;
+                }
+                break;
+              case 'processing':
+                stats.processingJobs++;
+                break;
+              case 'completed':
+                stats.completedJobs++;
+                if (job.started_at && job.completed_at) {
+                  const processingTime = new Date(job.completed_at).getTime() - new Date(job.started_at).getTime();
+                  totalProcessingTime += processingTime;
+                  completedJobsWithTime++;
+                }
+                break;
+              case 'failed':
+              case 'cancelled':
+                stats.failedJobs++;
+                break;
             }
-            break;
-          case 'processing':
-            stats.processingJobs++;
-            break;
-          case 'completed':
-            stats.completedJobs++;
-            // ✅ Fixed: Add proper null checks for started_at and completed_at
-            if (job.started_at && job.completed_at) {
-              const processingTime = new Date(job.completed_at).getTime() - new Date(job.started_at).getTime();
-              totalProcessingTime += processingTime;
-              completedJobsWithTime++;
-            }
-            break;
-          case 'failed':
-          case 'cancelled':
-            stats.failedJobs++;
-            break;
+          });
+        } catch (tableError) {
+          console.warn(`⚠️ Error querying table ${tableName}:`, tableError);
         }
-      });
+      }
 
       stats.queueDepth = stats.pendingJobs + stats.processingJobs;
       stats.oldestPendingJob = oldestPending;
@@ -191,7 +183,7 @@ class BackgroundJobMonitor {
     }
   }
 
-  // Get statistics by job type
+  // Get statistics by job type using individual tables
   async getJobTypeStatistics(): Promise<JobTypeStats> {
     const cacheKey = 'job-type-statistics';
     const cached = this.getCachedMetric(cacheKey);
@@ -202,25 +194,24 @@ class BackgroundJobMonitor {
     }
 
     try {
-      const { data: rawJobs, error } = await this.supabase
-        .from('background_jobs')
-        .select('type, status, started_at, completed_at');
-
-      if (error) throw error;
-
-      // Cast the response to the correct type using double assertion
-      const jobs = (rawJobs as unknown) as TypedJobRow[] | null;
-
       const typeStats: JobTypeStats = {};
+      const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+      
+      for (const jobType of jobTypes) {
+        const tableName = JOB_TABLE_MAP[jobType];
+        
+        try {
+          const { data: jobs, error } = await this.supabase
+            .from(tableName)
+            .select('status, started_at, completed_at');
 
-      if (!jobs || !Array.isArray(jobs)) {
-        this.setCachedMetric(cacheKey, typeStats);
-        return typeStats;
-      }
+          if (error) {
+            console.warn(`⚠️ Failed to query ${tableName}:`, error);
+            continue;
+          }
 
-      jobs.forEach((job: TypedJobRow) => {
-        const jobType = job.type as string;
-        if (!typeStats[jobType]) {
+          if (!jobs || !Array.isArray(jobs)) continue;
+
           typeStats[jobType] = {
             total: 0,
             completed: 0,
@@ -228,35 +219,35 @@ class BackgroundJobMonitor {
             averageTime: 0,
             successRate: 0,
           };
+
+          const stats = typeStats[jobType];
+          let totalTime = 0;
+          let completedWithTime = 0;
+
+          jobs.forEach((job: any) => {
+            stats.total++;
+
+            if (job.status === 'completed') {
+              stats.completed++;
+              if (job.started_at && job.completed_at) {
+                const processingTime = new Date(job.completed_at).getTime() - new Date(job.started_at).getTime();
+                totalTime += processingTime;
+                completedWithTime++;
+              }
+            } else if (job.status === 'failed' || job.status === 'cancelled') {
+              stats.failed++;
+            }
+          });
+
+          // Calculate averages
+          const totalFinished = stats.completed + stats.failed;
+          stats.successRate = totalFinished > 0 ? (stats.completed / totalFinished) * 100 : 0;
+          stats.averageTime = completedWithTime > 0 ? totalTime / completedWithTime : 0;
+
+        } catch (tableError) {
+          console.warn(`⚠️ Error processing table ${tableName}:`, tableError);
         }
-
-        const stats = typeStats[jobType];
-        stats.total++;
-
-        if (job.status === 'completed') {
-          stats.completed++;
-        } else if (job.status === 'failed' || job.status === 'cancelled') {
-          stats.failed++;
-        }
-      });
-
-      // Calculate success rates and average times
-      Object.keys(typeStats).forEach(type => {
-        const stats = typeStats[type];
-        const totalFinished = stats.completed + stats.failed;
-        stats.successRate = totalFinished > 0 ? (stats.completed / totalFinished) * 100 : 0;
-
-        // Calculate average processing time for completed jobs
-        const completedJobs = jobs.filter((j: TypedJobRow) => 
-          j.type === type && j.status === 'completed' && j.started_at && j.completed_at
-        );
-        if (completedJobs.length > 0) {
-          const totalTime = completedJobs.reduce((sum, job: TypedJobRow) => {
-            return sum + (new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
-          }, 0);
-          stats.averageTime = totalTime / completedJobs.length;
-        }
-      });
+      }
 
       this.setCachedMetric(cacheKey, typeStats);
       return typeStats;
@@ -332,7 +323,7 @@ class BackgroundJobMonitor {
     }
   }
 
-  // Get performance metrics
+  // Get performance metrics across all job tables
   async getPerformanceMetrics(): Promise<PerformanceMetrics> {
     const cacheKey = 'performance-metrics';
     const cached = this.getCachedMetric(cacheKey);
@@ -347,45 +338,49 @@ class BackgroundJobMonitor {
       const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-      const { data: rawJobs, error } = await this.supabase
-        .from('background_jobs')
-        .select('status, created_at, started_at, completed_at, retry_count')
-        .gte('created_at', oneDayAgo.toISOString());
+      let allRecentJobs: any[] = [];
+      const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+      
+      for (const jobType of jobTypes) {
+        const tableName = JOB_TABLE_MAP[jobType];
+        
+        try {
+          const { data: jobs, error } = await this.supabase
+            .from(tableName)
+            .select('status, created_at, started_at, completed_at, retry_count')
+            .gte('created_at', oneDayAgo.toISOString());
 
-      if (error) throw error;
+          if (error) {
+            console.warn(`⚠️ Failed to query ${tableName} for metrics:`, error);
+            continue;
+          }
 
-      // Cast the response to the correct type using double assertion
-      const recentJobs = (rawJobs as unknown) as PerformanceJobRow[] | null;
-
-      if (!recentJobs || !Array.isArray(recentJobs)) {
-        const emptyMetrics: PerformanceMetrics = {
-          jobsPerHour: 0,
-          jobsPerDay: 0,
-          peakProcessingTime: 0,
-          resourceUtilization: 0,
-          errorFrequency: 0,
-          retryRate: 0,
-        };
-        this.setCachedMetric(cacheKey, emptyMetrics);
-        return emptyMetrics;
+          if (jobs && Array.isArray(jobs)) {
+            // Add job type to each record for analysis
+            const jobsWithType = jobs.map(job => ({ ...job, type: jobType }));
+            allRecentJobs = allRecentJobs.concat(jobsWithType);
+          }
+        } catch (tableError) {
+          console.warn(`⚠️ Error getting metrics from table ${tableName}:`, tableError);
+        }
       }
 
-      const hourlyJobs = recentJobs.filter((job: PerformanceJobRow) => new Date(job.created_at) >= oneHourAgo);
-      const completedJobs = recentJobs.filter((job: PerformanceJobRow) => job.status === 'completed');
-      const failedJobs = recentJobs.filter((job: PerformanceJobRow) => job.status === 'failed');
-      const retriedJobs = recentJobs.filter((job: PerformanceJobRow) => job.retry_count > 0);
+      const hourlyJobs = allRecentJobs.filter(job => new Date(job.created_at) >= oneHourAgo);
+      const completedJobs = allRecentJobs.filter(job => job.status === 'completed');
+      const failedJobs = allRecentJobs.filter(job => job.status === 'failed');
+      const retriedJobs = allRecentJobs.filter(job => (job.retry_count || 0) > 0);
 
       const processingTimes = completedJobs
-        .filter((job: PerformanceJobRow) => job.started_at && job.completed_at)
-        .map((job: PerformanceJobRow) => new Date(job.completed_at!).getTime() - new Date(job.started_at!).getTime());
+        .filter(job => job.started_at && job.completed_at)
+        .map(job => new Date(job.completed_at).getTime() - new Date(job.started_at).getTime());
 
       const metrics: PerformanceMetrics = {
         jobsPerHour: hourlyJobs.length,
-        jobsPerDay: recentJobs.length,
+        jobsPerDay: allRecentJobs.length,
         peakProcessingTime: processingTimes.length > 0 ? Math.max(...processingTimes) : 0,
         resourceUtilization: this.calculateResourceUtilization(),
-        errorFrequency: recentJobs.length > 0 ? (failedJobs.length / recentJobs.length) * 100 : 0,
-        retryRate: recentJobs.length > 0 ? (retriedJobs.length / recentJobs.length) * 100 : 0,
+        errorFrequency: allRecentJobs.length > 0 ? (failedJobs.length / allRecentJobs.length) * 100 : 0,
+        retryRate: allRecentJobs.length > 0 ? (retriedJobs.length / allRecentJobs.length) * 100 : 0,
       };
 
       this.setCachedMetric(cacheKey, metrics);
@@ -396,7 +391,7 @@ class BackgroundJobMonitor {
     }
   }
 
-  // Detect stuck jobs that need intervention
+  // Detect stuck jobs across all job tables
   async getStuckJobs(): Promise<JobData[]> {
     if (!this.initialized || !this.supabase) {
       throw new Error('Monitor not initialized');
@@ -404,27 +399,43 @@ class BackgroundJobMonitor {
 
     try {
       const stuckThreshold = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes ago
+      const stuckJobs: JobData[] = [];
+      const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+      
+      for (const jobType of jobTypes) {
+        const tableName = JOB_TABLE_MAP[jobType];
+        
+        try {
+          const { data: jobs, error } = await this.supabase
+            .from(tableName)
+            .select('*')
+            .eq('status', 'processing')
+            .lt('updated_at', stuckThreshold.toISOString());
 
-      const { data: rawStuckJobs, error } = await this.supabase
-        .from('background_jobs')
-        .select('*')
-        .eq('status', 'processing')
-        .lt('updated_at', stuckThreshold.toISOString());
+          if (error) {
+            console.warn(`⚠️ Failed to check stuck jobs in ${tableName}:`, error);
+            continue;
+          }
 
-      if (error) throw error;
+          if (jobs && Array.isArray(jobs)) {
+            // Convert to unified JobData format
+            const convertedJobs = jobs.map(job => this.convertToJobData(jobType, job));
+            stuckJobs.push(...convertedJobs);
+          }
+        } catch (tableError) {
+          console.warn(`⚠️ Error checking stuck jobs in table ${tableName}:`, tableError);
+        }
+      }
 
-      // Cast the response to the correct type using double assertion (safer)
-      const stuckJobs = (rawStuckJobs as unknown) as JobData[] | null;
-
-      console.log(`🔍 Found ${stuckJobs?.length || 0} potentially stuck jobs`);
-      return stuckJobs || [];
+      console.log(`🔍 Found ${stuckJobs.length} potentially stuck jobs`);
+      return stuckJobs;
     } catch (error: unknown) {
       console.error('❌ Failed to detect stuck jobs:', error);
       throw error;
     }
   }
 
-  // Clean up old completed jobs
+  // Clean up old completed jobs from all tables
   async cleanupOldJobs(retentionDays: number = 7): Promise<number> {
     if (!this.initialized || !this.supabase) {
       throw new Error('Monitor not initialized');
@@ -432,26 +443,81 @@ class BackgroundJobMonitor {
 
     try {
       const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      let totalDeleted = 0;
+      const jobTypes: JobType[] = ['cartoonize', 'auto-story', 'image-generation', 'storybook', 'scenes'];
+      
+      for (const jobType of jobTypes) {
+        const tableName = JOB_TABLE_MAP[jobType];
+        
+        try {
+          const { data: deletedJobs, error } = await this.supabase
+            .from(tableName)
+            .delete()
+            .in('status', ['completed', 'failed', 'cancelled'])
+            .lt('completed_at', cutoffDate.toISOString())
+            .select('id');
 
-      const { data: rawDeletedJobs, error } = await this.supabase
-        .from('background_jobs')
-        .delete()
-        .in('status', ['completed', 'failed', 'cancelled'])
-        .lt('completed_at', cutoffDate.toISOString())
-        .select('id');
+          if (error) {
+            console.warn(`⚠️ Failed to cleanup ${tableName}:`, error);
+            continue;
+          }
 
-      if (error) throw error;
+          const deletedCount = deletedJobs?.length || 0;
+          totalDeleted += deletedCount;
+          
+          if (deletedCount > 0) {
+            console.log(`🧹 Cleaned up ${deletedCount} old jobs from ${tableName}`);
+          }
+        } catch (tableError) {
+          console.warn(`⚠️ Error cleaning up table ${tableName}:`, tableError);
+        }
+      }
 
-      // Cast the response to the correct type using double assertion
-      const deletedJobs = (rawDeletedJobs as unknown) as Array<{ id: string }> | null;
-
-      const deletedCount = deletedJobs?.length || 0;
-      console.log(`🧹 Cleaned up ${deletedCount} old jobs`);
-      return deletedCount;
+      console.log(`🧹 Total cleaned up: ${totalDeleted} old jobs`);
+      return totalDeleted;
     } catch (error: unknown) {
       console.error('❌ Failed to cleanup old jobs:', error);
       throw error;
     }
+  }
+
+  // Convert table-specific job data to unified JobData format
+  private convertToJobData(jobType: JobType, tableData: any): JobData {
+    const baseJob: any = {
+      id: tableData.id?.toString() || 'unknown',
+      type: jobType,
+      status: tableData.status || 'pending',
+      progress: tableData.progress || 0,
+      current_step: tableData.current_step,
+      user_id: tableData.user_id?.toString(),
+      created_at: tableData.created_at,
+      updated_at: tableData.updated_at,
+      started_at: tableData.started_at,
+      completed_at: tableData.completed_at,
+      error_message: tableData.error_message,
+      retry_count: tableData.retry_count || 0,
+      max_retries: tableData.max_retries || 3,
+      input_data: {},
+      result_data: {}
+    };
+
+    // Map job-type specific fields
+    if (jobType === 'cartoonize') {
+      baseJob.input_data = {
+        prompt: tableData.original_image_data || '',
+        style: tableData.style || 'cartoon',
+        imageUrl: tableData.original_cloudinary_url
+      };
+      if (tableData.generated_image_url) {
+        baseJob.result_data = {
+          url: tableData.generated_image_url,
+          cached: !!tableData.final_cloudinary_url
+        };
+      }
+    }
+    // Add other job type mappings as needed...
+
+    return baseJob as JobData;
   }
 
   // Generate comprehensive health report
@@ -503,7 +569,6 @@ class BackgroundJobMonitor {
   }
 
   private getProcessingCapacity(): number {
-    // This would be based on system configuration
     const maxConcurrentJobs = parseInt(process.env.MAX_CONCURRENT_JOBS || '3');
     return maxConcurrentJobs;
   }
@@ -514,8 +579,6 @@ class BackgroundJobMonitor {
   }
 
   private calculateResourceUtilization(): number {
-    // This would integrate with actual system metrics
-    // For now, return a placeholder based on queue depth
     const cachedStats = this.metricsCache.get('job-statistics');
     const queueDepth = cachedStats?.data?.queueDepth || 0;
     return Math.min(100, queueDepth * 10);
