@@ -51,7 +51,17 @@ class BackgroundJobManager {
   }
 
   private generateJobId(): string {
-    return `job_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    // Generate proper UUID format using crypto.randomUUID() if available
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    
+    // Fallback UUID generation for environments without crypto.randomUUID
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   private getTableName(jobType: JobType): string {
@@ -429,6 +439,8 @@ class BackgroundJobManager {
     const jobId = this.generateJobId();
     const now = new Date().toISOString();
 
+    console.log(`🔧 Creating cartoonize job with UUID: ${jobId}`);
+
     const jobData: CartoonizeJobData = {
       id: jobId,
       type: 'cartoonize',
@@ -444,6 +456,14 @@ class BackgroundJobManager {
     };
 
     const tableData = this.mapToTableFormat('cartoonize', jobData);
+
+    console.log(`📊 Cartoonize job table data:`, {
+      id: tableData.id,
+      user_id: tableData.user_id,
+      status: tableData.status,
+      original_image_data: tableData.original_image_data,
+      style: tableData.style
+    });
 
     const result = await this.executeQuery<{ id: string }>(
       'Create cartoonize job',
@@ -462,6 +482,7 @@ class BackgroundJobManager {
       return jobId;
     }
 
+    console.error(`❌ Failed to create cartoonize job: ${jobId}`);
     return null;
   }
 
