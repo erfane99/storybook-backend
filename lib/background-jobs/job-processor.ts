@@ -1,5 +1,6 @@
 import { jobManager } from './job-manager';
 import { JobData, JobType, StorybookJobData, AutoStoryJobData, SceneJobData, CartoonizeJobData, ImageJobData } from './types';
+import { cartoonizeService } from '@/lib/services/cartoonize-service';
 
 class BackgroundJobProcessor {
   private isProcessing = false;
@@ -366,55 +367,33 @@ class BackgroundJobProcessor {
     }
   }
 
-  // Process image cartoonization job
+  // Process image cartoonization job - UPDATED TO USE INTERNAL SERVICE
   async processCartoonizeJob(job: CartoonizeJobData): Promise<void> {
     const { prompt, style, imageUrl } = job.input_data;
 
     try {
-      // Step 1: Upload to Cloudinary if needed (0% → 33%)
+      // Step 1: Initialize processing (0% → 10%)
       await jobManager.updateJobProgress(job.id, 10, 'Preparing image for processing');
 
-      let processedImageUrl = imageUrl;
-      if (!processedImageUrl) {
-        // If no image URL provided, this might be a direct prompt cartoonization
-        processedImageUrl = '';
-      }
-
-      await jobManager.updateJobProgress(job.id, 33, 'Image preparation complete');
-
-      // Step 2: DALL-E generation (33% → 66%)
+      // Step 2: Process with cartoonize service (10% → 90%)
       await jobManager.updateJobProgress(job.id, 40, 'Generating cartoon image');
 
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
-      
-      const cartoonizeResponse = await fetch(`${baseUrl}/api/image/cartoonize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          style,
-          user_id: job.user_id,
-        }),
+      const result = await cartoonizeService.processCartoonize({
+        prompt,
+        style,
+        imageUrl,
+        userId: job.user_id,
       });
 
-      if (!cartoonizeResponse.ok) {
-        const errorData = await cartoonizeResponse.json();
-        throw new Error(errorData.error || 'Failed to cartoonize image');
-      }
+      await jobManager.updateJobProgress(job.id, 90, 'Cartoon generation complete');
 
-      const { url, cached } = await cartoonizeResponse.json();
-
-      await jobManager.updateJobProgress(job.id, 66, 'Cartoon generation complete');
-
-      // Step 3: Final upload (66% → 100%)
-      await jobManager.updateJobProgress(job.id, 90, 'Finalizing cartoon image');
-
+      // Step 3: Finalize (90% → 100%)
       await jobManager.updateJobProgress(job.id, 100, 'Cartoonization complete');
 
       // Mark job as completed
       await jobManager.markJobCompleted(job.id, {
-        url,
-        cached: cached || false,
+        url: result.url,
+        cached: result.cached,
       });
 
       console.log(`✅ Cartoonize job completed: ${job.id}`);

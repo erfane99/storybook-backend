@@ -1,15 +1,62 @@
 import { NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 import { jobManager } from '@/lib/background-jobs/job-manager';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables');
+      return NextResponse.json({ 
+        error: 'Database configuration error. Please check Supabase environment variables.',
+        configurationError: true
+      }, { status: 500 });
+    }
+
+    if (!openaiApiKey) {
+      console.error('❌ OPENAI_API_KEY environment variable is missing');
+      return NextResponse.json(
+        { 
+          error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in your environment variables.',
+          configurationError: true
+        },
+        { status: 500 }
+      );
+    }
+
+    // Initialize server-side Supabase client for authentication
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient({
+      cookies: () => cookieStore,
+    });
+
+    // Get authenticated user (optional for cartoonize)
+    let userId: string | undefined;
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (!authError && user) {
+        userId = user.id;
+      }
+    } catch (authError) {
+      // Continue without user ID - cartoonize can work anonymously
+      console.log('No authenticated user, proceeding anonymously');
+    }
+
     // Handle both JSON and FormData inputs
     let prompt: string;
     let style: string = 'semi-realistic';
     let imageUrl: string | undefined;
-    let userId: string | undefined;
 
     const contentType = request.headers.get('content-type');
 
@@ -58,7 +105,6 @@ export async function POST(request: Request) {
       prompt = body.prompt;
       style = body.style || 'semi-realistic';
       imageUrl = body.imageUrl;
-      userId = body.user_id;
     }
 
     // Validation
@@ -74,17 +120,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ 
         error: 'Invalid style. Must be one of: ' + validStyles.join(', ') 
       }, { status: 400 });
-    }
-
-    // Optional user authentication
-    try {
-      const authHeader = request.headers.get('authorization');
-      if (authHeader?.startsWith('Bearer ') && !userId) {
-        // Extract user ID from token if provided
-        // This is optional for cartoonize operations
-      }
-    } catch (authError) {
-      // Continue without user ID - cartoonize can work anonymously
     }
 
     // Create background job
