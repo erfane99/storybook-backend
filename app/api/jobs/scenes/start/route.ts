@@ -53,11 +53,6 @@ export async function POST(request: Request) {
     const estimatedMinutes = Math.max(1, baseMinutes + Math.floor(wordCount / 200));
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    // Dynamic base URL detection
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
     console.log(`✅ Created scene generation job: ${jobId}`);
 
     return NextResponse.json({
@@ -65,7 +60,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `${baseUrl}/api/jobs/scenes/status/${jobId}`,
+      pollingUrl: `/api/jobs/scenes/status/${jobId}`,
       message: 'Scene generation started. Your story will be broken down into illustrated scenes.',
       storyInfo: {
         wordCount,

@@ -99,11 +99,6 @@ export async function POST(request: Request) {
     const estimatedMinutes = 5; // Auto-story generation typically takes 3-7 minutes
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    // Dynamic base URL detection
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
     console.log(`✅ Created auto-story job: ${jobId} for user: ${user.id}`);
 
     return NextResponse.json({
@@ -111,7 +106,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `${baseUrl}/api/jobs/auto-story/status/${jobId}`,
+      pollingUrl: `/api/jobs/auto-story/status/${jobId}`,
       message: 'Auto-story generation started. This will create a complete story and scenes automatically.',
       phases: [
         'Generating story content',

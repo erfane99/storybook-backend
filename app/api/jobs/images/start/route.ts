@@ -71,11 +71,6 @@ export async function POST(request: Request) {
     const estimatedMinutes = 2; // Single image generation typically takes 1-3 minutes
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    // Dynamic base URL detection
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
     console.log(`✅ Created image generation job: ${jobId}`);
 
     return NextResponse.json({
@@ -83,7 +78,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `${baseUrl}/api/jobs/image/status/${jobId}`,
+      pollingUrl: `/api/jobs/images/status/${jobId}`,
       message: 'Image generation started. Creating a custom illustration for your scene.',
       imageInfo: {
         style,

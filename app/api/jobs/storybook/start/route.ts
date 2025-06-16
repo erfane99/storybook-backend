@@ -92,11 +92,6 @@ export async function POST(request: Request) {
     const estimatedMinutes = Math.max(2, pages.length * 0.5); // 30 seconds per page minimum 2 minutes
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    // Dynamic base URL detection
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
     console.log(`✅ Created storybook job: ${jobId} for user: ${user?.id || 'anonymous'}`);
 
     return NextResponse.json({
@@ -104,7 +99,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `${baseUrl}/api/jobs/storybook/status/${jobId}`,
+      pollingUrl: `/api/jobs/storybook/status/${jobId}`,
       message: 'Storybook generation started. Use the polling URL to track progress.'
     });
 

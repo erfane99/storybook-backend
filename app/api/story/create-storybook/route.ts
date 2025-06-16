@@ -87,19 +87,14 @@ export async function POST(request: Request) {
       }
     }
 
-    // Dynamic base URL detection from request headers
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
-    console.log('🌐 Detected base URL:', baseUrl);
+    console.log('🌐 Processing storybook creation...');
 
     let characterDescription = '';
 
     if (!isReusedImage) {
       console.log('🔍 Getting character description...');
       try {
-        const describeResponse = await fetch(`${baseUrl}/api/image/describe`, {
+        const describeResponse = await fetch('/api/image/describe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageUrl: characterImage }),
@@ -133,7 +128,7 @@ export async function POST(request: Request) {
         console.log(`Processing Scene ${sceneIndex + 1} of Page ${pageIndex + 1}`);
 
         try {
-          const imageResponse = await fetch(`${baseUrl}/api/story/generate-cartoon-image`, {
+          const imageResponse = await fetch('/api/story/generate-cartoon-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

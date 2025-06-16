@@ -234,15 +234,10 @@ ${config.prompt}
     const generatedStory = data.choices[0].message.content;
     console.log('✅ Successfully generated story');
 
-    // Dynamic base URL detection from request headers
-    const host = req.headers.get('host');
-    const protocol = req.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
-    console.log('🌐 Detected base URL:', baseUrl);
+    console.log('🌐 Processing story scenes...');
 
     // Generate scenes using the existing endpoint
-    const scenesResponse = await fetch(`${baseUrl}/api/story/generate-scenes`, {
+    const scenesResponse = await fetch('/api/story/generate-scenes', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -262,11 +257,16 @@ ${config.prompt}
 
     const { pages } = await scenesResponse.json();
 
-    // Import Supabase client inside the handler to avoid build-time evaluation
+    // Import Supabase client with proper error handling
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('Missing required Supabase environment variables');
+    }
+
     const { createClient } = await import('@supabase/supabase-js');
-    
-    // Save to storybook_entries
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
 
     const { data: storybook, error: supabaseError } = await supabase
       .from('storybook_entries')

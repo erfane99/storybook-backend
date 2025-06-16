@@ -78,11 +78,7 @@ export async function POST(request: Request) {
         const uploadFormData = new FormData();
         uploadFormData.append('image', file);
 
-        const host = request.headers.get('host');
-        const protocol = request.headers.get('x-forwarded-proto') || 'https';
-        const uploadUrl = `${protocol}://${host}/api/upload-image`;
-
-        const uploadResponse = await fetch(uploadUrl, {
+        const uploadResponse = await fetch('/api/upload-image', {
           method: 'POST',
           body: uploadFormData,
         });
@@ -140,11 +136,6 @@ export async function POST(request: Request) {
     const estimatedMinutes = 2; // Cartoonization typically takes 1-3 minutes
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    // Dynamic base URL detection
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
     console.log(`✅ Created cartoonize job: ${jobId}`);
 
     return NextResponse.json({
@@ -152,7 +143,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `${baseUrl}/api/jobs/cartoonize/status/${jobId}`,
+      pollingUrl: `/api/jobs/cartoonize/status/${jobId}`,
       message: 'Image cartoonization started. Your image will be transformed into cartoon style.',
       processingInfo: {
         style,

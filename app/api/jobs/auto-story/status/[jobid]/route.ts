@@ -75,9 +75,7 @@ export async function GET(
       
       // Include storybook ID for redirection - Fixed type checking
       if (job.result_data && 'storybook_id' in job.result_data && job.result_data.storybook_id) {
-        const host = request.headers.get('host');
-        const protocol = request.headers.get('x-forwarded-proto') || 'https';
-        response.storybookUrl = `${protocol}://${host}/storybook/${job.result_data.storybook_id}`;
+        response.storybookUrl = `/storybook/${job.result_data.storybook_id}`;
       }
     }
 

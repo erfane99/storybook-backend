@@ -100,10 +100,7 @@ class BackgroundJobProcessor {
       let characterDescription = '';
       if (!isReusedImage) {
         try {
-          // Get base URL from environment or use localhost
-          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
-          
-          const describeResponse = await fetch(`${baseUrl}/api/image/describe`, {
+          const describeResponse = await fetch('/api/image/describe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageUrl: characterImage }),
@@ -134,9 +131,7 @@ class BackgroundJobProcessor {
 
         for (const [sceneIndex, scene] of (page.scenes || []).entries()) {
           try {
-            const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
-            
-            const imageResponse = await fetch(`${baseUrl}/api/story/generate-cartoon-image`, {
+            const imageResponse = await fetch('/api/story/generate-cartoon-image', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -249,9 +244,7 @@ class BackgroundJobProcessor {
       // Step 1: Generate story content (0% → 40%)
       await jobManager.updateJobProgress(job.id, 5, 'Generating story content');
 
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
-      
-      const storyResponse = await fetch(`${baseUrl}/api/story/generate-auto-story`, {
+      const storyResponse = await fetch('/api/story/generate-auto-story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -297,9 +290,7 @@ class BackgroundJobProcessor {
       let characterDescription = 'a young protagonist';
       if (characterImage) {
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
-          
-          const describeResponse = await fetch(`${baseUrl}/api/image/describe`, {
+          const describeResponse = await fetch('/api/image/describe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageUrl: characterImage }),
@@ -319,9 +310,7 @@ class BackgroundJobProcessor {
       // Step 2: Scene planning (30% → 70%)
       await jobManager.updateJobProgress(job.id, 40, 'Breaking story into scenes');
 
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
-      
-      const scenesResponse = await fetch(`${baseUrl}/api/story/generate-scenes`, {
+      const scenesResponse = await fetch('/api/story/generate-scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -447,9 +436,7 @@ class BackgroundJobProcessor {
       await jobManager.updateJobProgress(job.id, 50, 'Cache check complete, generating new image');
 
       // Step 2: DALL-E generation (50% → 100%)
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
-      
-      const imageResponse = await fetch(`${baseUrl}/api/story/generate-cartoon-image`, {
+      const imageResponse = await fetch('/api/story/generate-cartoon-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
