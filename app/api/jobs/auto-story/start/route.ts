@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { jobManager } from '@/lib/background-jobs/job-manager';
+import { jobProcessor } from '@/lib/background-jobs/job-processor';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +95,11 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    // Trigger immediate job processing
+    jobProcessor.processNextJobStep().catch(error => {
+      console.error(`Failed to start processing job ${jobId}:`, error);
+    });
 
     // Calculate estimated completion time (auto-story takes longer due to AI generation)
     const estimatedMinutes = 5; // Auto-story generation typically takes 3-7 minutes

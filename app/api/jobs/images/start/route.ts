@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { jobManager } from '@/lib/background-jobs/job-manager';
+import { jobProcessor } from '@/lib/background-jobs/job-processor';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +67,11 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    // Trigger immediate job processing
+    jobProcessor.processNextJobStep().catch(error => {
+      console.error(`Failed to start processing job ${jobId}:`, error);
+    });
 
     // Calculate estimated completion time (single image generation)
     const estimatedMinutes = 2; // Single image generation typically takes 1-3 minutes

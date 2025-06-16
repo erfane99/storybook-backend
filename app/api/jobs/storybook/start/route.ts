@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { jobManager } from '@/lib/background-jobs/job-manager';
+import { jobProcessor } from '@/lib/background-jobs/job-processor';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,6 +88,11 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    // Trigger immediate job processing
+    jobProcessor.processNextJobStep().catch(error => {
+      console.error(`Failed to start processing job ${jobId}:`, error);
+    });
 
     // Calculate estimated completion time (based on number of pages)
     const estimatedMinutes = Math.max(2, pages.length * 0.5); // 30 seconds per page minimum 2 minutes
