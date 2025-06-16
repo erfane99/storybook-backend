@@ -93,11 +93,7 @@ export async function GET(
     }
 
     // Set appropriate cache headers
-    const headers: Record<string, string> = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
+    const headers: Record<string, string> = {};
 
     if (['completed', 'failed', 'cancelled'].includes(job.status)) {
       headers['Cache-Control'] = 'public, max-age=3600';
@@ -123,10 +119,5 @@ export async function GET(
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
   });
 }

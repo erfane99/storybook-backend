@@ -12,11 +12,6 @@ export async function GET() {
       environment: process.env.NODE_ENV || 'development',
     }, {
       status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
     });
   } catch (error) {
     console.error('Health check failed:', error);
@@ -26,11 +21,6 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     }, {
       status: 500,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
     });
   }
 }
@@ -39,10 +29,5 @@ export async function GET() {
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
   });
 }
