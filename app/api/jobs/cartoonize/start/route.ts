@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
@@ -30,11 +31,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Initialize server-side Supabase client for authentication
+    // Initialize server-side Supabase client for authentication (uses anon key)
     const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({
+    const authSupabase = createRouteHandlerClient({
       cookies: () => cookieStore,
     });
+
+    // Initialize admin Supabase client for job creation (uses service role key)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Get authenticated user (optional for cartoonize)
     let userId: string | undefined;
@@ -42,7 +46,7 @@ export async function POST(request: Request) {
       const {
         data: { user },
         error: authError,
-      } = await supabase.auth.getUser();
+      } = await authSupabase.auth.getUser();
 
       if (!authError && user) {
         userId = user.id;
@@ -121,8 +125,8 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Create job entry in database
-    const { error: insertError } = await supabase
+    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    const { error: insertError } = await adminSupabase
       .from('cartoonize_jobs')
       .insert({
         id: jobId,
