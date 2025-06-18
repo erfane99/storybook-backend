@@ -6,6 +6,17 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { error: 'Database configuration error' },
+        { status: 500 }
+      );
+    }
+
     // Get the authorization header
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -42,14 +53,11 @@ export async function POST(request: Request) {
         );
       }
 
-      // Initialize Supabase client
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
+      // Use admin client for database operations (bypasses RLS)
+      const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
       // Update the storybook
-      const { error } = await supabase
+      const { error } = await adminSupabase
         .from('storybook_entries')
         .update({ is_paid: true })
         .eq('id', storybookId)

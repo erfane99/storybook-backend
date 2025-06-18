@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
@@ -18,17 +19,20 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Initialize server-side Supabase client
+    // Initialize dual Supabase clients
     const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({
+    const authSupabase = createRouteHandlerClient({
       cookies: () => cookieStore,
     });
 
-    // Get authenticated user
+    // Admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Get authenticated user using auth client
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser();
+    } = await authSupabase.auth.getUser();
 
     if (authError) {
       console.error('Auth error:', authError);
@@ -39,25 +43,15 @@ export async function POST(request: Request) {
     const { title, story, characterImage, pages, audience, isReusedImage } = await request.json();
 
     // Validation - same as current create-storybook
-    if (!title?.trim()) {
-      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
-    }
-    if (!story?.trim()) {
-      return NextResponse.json({ error: 'Story content is required' }, { status: 400 });
-    }
-    if (!Array.isArray(pages) || pages.length === 0) {
-      return NextResponse.json({ error: 'At least one page is required' }, { status: 400 });
-    }
-    if (!characterImage) {
-      return NextResponse.json({ error: 'Character image is required' }, { status: 400 });
-    }
-    if (!['children', 'young_adults', 'adults'].includes(audience)) {
-      return NextResponse.json({ error: 'Invalid audience type' }, { status: 400 });
-    }
+    if (!title?.trim()) return NextResponse.json({ error: 'Title is required' }, { status: 400 });
+    if (!story?.trim()) return NextResponse.json({ error: 'Story content is required' }, { status: 400 });
+    if (!Array.isArray(pages) || pages.length === 0) return NextResponse.json({ error: 'At least one page is required' }, { status: 400 });
+    if (!characterImage) return NextResponse.json({ error: 'Character image is required' }, { status: 400 });
+    if (!['children', 'young_adults', 'adults'].includes(audience)) return NextResponse.json({ error: 'Invalid audience type' }, { status: 400 });
 
-    // Check if user has already created a storybook (for authenticated users)
+    // Check if user has already created a storybook (using auth client)
     if (user?.id) {
-      const { count } = await supabase
+      const { count } = await authSupabase
         .from('storybook_entries')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
@@ -74,8 +68,8 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Create job entry in database
-    const { error: insertError } = await supabase
+    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    const { error: insertError } = await adminSupabase
       .from('storybook_jobs')
       .insert({
         id: jobId,

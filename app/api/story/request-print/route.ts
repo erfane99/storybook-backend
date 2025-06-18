@@ -6,6 +6,17 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { error: 'Database configuration error' },
+        { status: 500 }
+      );
+    }
+
     // Get the authorization header
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -42,14 +53,11 @@ export async function POST(request: Request) {
         );
       }
 
-      // Initialize Supabase client
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
+      // Use admin client for database operations (bypasses RLS)
+      const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
       // Check if a print request already exists
-      const { data: existingRequest, error: checkError } = await supabase
+      const { data: existingRequest, error: checkError } = await adminSupabase
         .from('print_requests')
         .select('id')
         .eq('storybook_id', storybook_id)
@@ -72,7 +80,7 @@ export async function POST(request: Request) {
       }
 
       // Insert new print request
-      const { error: insertError } = await supabase
+      const { error: insertError } = await adminSupabase
         .from('print_requests')
         .insert({
           user_id: decoded.sub,

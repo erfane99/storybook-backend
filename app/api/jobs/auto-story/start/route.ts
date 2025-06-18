@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
@@ -18,17 +19,20 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Initialize server-side Supabase client
+    // Initialize dual Supabase clients
     const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({
+    const authSupabase = createRouteHandlerClient({
       cookies: () => cookieStore,
     });
 
-    // Get authenticated user
+    // Admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Get authenticated user using auth client
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser();
+    } = await authSupabase.auth.getUser();
 
     if (authError) {
       console.error('Auth error:', authError);
@@ -66,8 +70,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid genre' }, { status: 400 });
     }
 
-    // Check if user has already created a storybook
-    const { count } = await supabase
+    // Check if user has already created a storybook (using auth client)
+    const { count } = await authSupabase
       .from('storybook_entries')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id);
@@ -83,8 +87,8 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Create job entry in database
-    const { error: insertError } = await supabase
+    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    const { error: insertError } = await adminSupabase
       .from('auto_story_jobs')
       .insert({
         id: jobId,

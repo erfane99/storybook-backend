@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -257,18 +258,10 @@ ${config.prompt}
 
     const { pages } = await scenesResponse.json();
 
-    // Import Supabase client with proper error handling
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error('Missing required Supabase environment variables');
-    }
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    const { data: storybook, error: supabaseError } = await supabase
+    const { data: storybook, error: supabaseError } = await adminSupabase
       .from('storybook_entries')
       .insert({
         title: `${genre.charAt(0).toUpperCase() + genre.slice(1)} Story`,

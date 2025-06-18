@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { error: 'Database configuration error' },
+        { status: 500 }
+      );
+    }
+
     const { phone } = await request.json();
 
     if (!phone) {
@@ -23,12 +34,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = createServerSupabaseClient();
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Check for recent OTP requests (throttling)
     const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
     
-    const { data: recentOtp, error: throttleCheckError } = await supabase
+    const { data: recentOtp, error: throttleCheckError } = await adminSupabase
       .from('phone_otp')
       .select('created_at')
       .eq('phone', phone)
@@ -58,8 +70,8 @@ export async function POST(request: Request) {
     // Set expiration time to 5 minutes from now
     const expires_at = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-    // Insert or update the phone_otp table
-    const { error } = await supabase
+    // Insert or update the phone_otp table using admin client
+    const { error } = await adminSupabase
       .from('phone_otp')
       .upsert({
         phone,

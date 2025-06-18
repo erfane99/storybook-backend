@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { error: 'Database configuration error' },
+        { status: 500 }
+      );
+    }
+
     const { phone, otp_code } = await request.json();
 
     if (!phone || !otp_code) {
@@ -32,10 +43,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = createServerSupabaseClient();
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Check if a matching OTP entry exists
-    const { data: otpRecord, error: otpError } = await supabase
+    const { data: otpRecord, error: otpError } = await adminSupabase
       .from('phone_otp')
       .select('*')
       .eq('phone', phone)
@@ -50,8 +62,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mark OTP as verified
-    const { error: updateError } = await supabase
+    // Mark OTP as verified using admin client
+    const { error: updateError } = await adminSupabase
       .from('phone_otp')
       .update({ verified: true })
       .eq('phone', phone)
@@ -65,8 +77,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if user already exists in profiles table
-    const { data: existingProfile, error: profileCheckError } = await supabase
+    // Check if user already exists in users table
+    const { data: existingProfile, error: profileCheckError } = await adminSupabase
       .from('users')
       .select('id')
       .eq('email', phone) // Using email field to store phone for now
@@ -77,7 +89,7 @@ export async function POST(request: Request) {
     // If user doesn't exist, create a new Supabase user
     if (!existingProfile) {
       try {
-        const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
+        const { data: newUser, error: createUserError } = await adminSupabase.auth.admin.createUser({
           phone: phone,
           phone_confirm: true,
           user_metadata: {
@@ -95,9 +107,9 @@ export async function POST(request: Request) {
 
         userId = newUser.user?.id;
 
-        // Insert into profiles table
+        // Insert into users table using admin client
         if (userId) {
-          const { error: profileError } = await supabase
+          const { error: profileError } = await adminSupabase
             .from('users')
             .insert({
               id: userId,
@@ -122,7 +134,7 @@ export async function POST(request: Request) {
     // Create a session for the user
     if (userId) {
       try {
-        const { data: sessionData, error: sessionError } = await supabase.auth.admin.generateLink({
+        const { data: sessionData, error: sessionError } = await adminSupabase.auth.admin.generateLink({
           type: 'magiclink',
           email: phone, // Using email field for phone
           options: {

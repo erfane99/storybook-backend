@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,12 +65,11 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Import Supabase client
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Create job entry in database
-    const { error: insertError } = await supabase
+    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    const { error: insertError } = await adminSupabase
       .from('image_generation_jobs')
       .insert({
         id: jobId,

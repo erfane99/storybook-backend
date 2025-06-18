@@ -1,4 +1,5 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -46,17 +47,20 @@ export async function POST(request: Request) {
     // Removed strict format validation - OpenAI now uses multiple key formats (sk-, sk-proj-, etc.)
     console.log('🔑 OpenAI API Key found, length:', openaiApiKey.length);
 
-    // Initialize server-side Supabase client
+    // Initialize dual Supabase clients
     const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({
+    const authSupabase = createRouteHandlerClient({
       cookies: () => cookieStore,
     });
 
-    // Get authenticated user
+    // Admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Get authenticated user using auth client
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser();
+    } = await authSupabase.auth.getUser();
 
     if (authError) {
       console.error('Auth error:', authError);
@@ -72,9 +76,9 @@ export async function POST(request: Request) {
     if (!Array.isArray(pages) || pages.length === 0) return NextResponse.json({ error: 'At least one page is required' }, { status: 400 });
     if (!characterImage) return NextResponse.json({ error: 'Character image is required' }, { status: 400 });
 
-    // Check if user has already created a storybook
+    // Check if user has already created a storybook (using auth client)
     if (user?.id) {
-      const { count } = await supabase
+      const { count } = await authSupabase
         .from('storybook_entries')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
@@ -179,7 +183,9 @@ export async function POST(request: Request) {
     }
 
     console.log('💾 Saving storybook to database...');
-    const { data: storybookEntry, error: supabaseError } = await supabase
+    
+    // Use admin client for database operations (bypasses RLS)
+    const { data: storybookEntry, error: supabaseError } = await adminSupabase
       .from('storybook_entries')
       .insert({
         title,
