@@ -71,7 +71,7 @@ export async function GET(
       }
     }
 
-    // Prepare response
+    // Prepare comprehensive response
     const response: any = {
       jobId: job.id,
       status: job.status,
@@ -86,23 +86,51 @@ export async function GET(
     // Add timing information
     if (job.started_at) {
       response.startedAt = job.started_at;
+      
+      // Calculate actual processing time if completed
+      if (job.completed_at) {
+        const processingTimeMs = new Date(job.completed_at).getTime() - new Date(job.started_at).getTime();
+        response.processingTimeSeconds = Math.round(processingTimeMs / 1000);
+      }
     }
+    
     if (job.completed_at) {
       response.completedAt = job.completed_at;
     }
 
-    // Add results if completed
+    // Add comprehensive results if completed
     if (job.status === 'completed' && job.generated_image_url) {
       response.result = {
         url: job.generated_image_url,
-        cached: !!job.final_cloudinary_url
+        temporaryUrl: job.generated_image_url, // For backward compatibility
+        permanentUrl: job.final_cloudinary_url || null, // If saved permanently
+        cached: !!job.final_cloudinary_url,
+        style: job.style || 'semi-realistic',
+        originalPrompt: job.original_image_data || null
       };
+      
       response.message = 'Image cartoonization completed successfully';
       
+      // Include processing information
       response.processingInfo = {
         cached: !!job.final_cloudinary_url,
-        message: job.final_cloudinary_url ? 'Result retrieved from cache for faster delivery' : 'New cartoon image generated'
+        style: job.style || 'semi-realistic',
+        hasOriginalData: !!job.original_image_data,
+        message: job.final_cloudinary_url 
+          ? 'Result retrieved from cache for faster delivery' 
+          : 'New cartoon image generated',
+        canSavePermanently: !job.final_cloudinary_url // User can save if not already permanent
       };
+
+      // Add save options for temporary results
+      if (!job.final_cloudinary_url && job.generated_image_url) {
+        response.saveOptions = {
+          available: true,
+          temporaryUrl: job.generated_image_url,
+          suggestedStyle: job.style || 'semi-realistic',
+          saveEndpoint: '/api/cartoon/save'
+        };
+      }
     }
 
     // Add error information if failed
@@ -110,21 +138,36 @@ export async function GET(
       response.error = job.error_message || 'Image cartoonization failed';
       response.retryCount = job.retry_count;
       response.maxRetries = job.max_retries;
+      
+      // Add retry information
+      if (job.retry_count < job.max_retries) {
+        response.canRetry = true;
+        response.nextRetryIn = '30 seconds'; // Typical retry delay
+      }
     }
 
     // Add retry information if applicable
     if (job.retry_count > 0) {
       response.retryCount = job.retry_count;
       response.maxRetries = job.max_retries;
+      response.retryHistory = `Attempted ${job.retry_count} time(s)`;
     }
+
+    // Add job metadata
+    response.jobMetadata = {
+      type: 'cartoonize',
+      hasSourceImage: !!job.original_cloudinary_url,
+      style: job.style || 'semi-realistic',
+      userId: job.user_id || null
+    };
 
     // Set appropriate cache headers
     const headers: Record<string, string> = {};
 
     if (['completed', 'failed', 'cancelled'].includes(job.status)) {
-      headers['Cache-Control'] = 'public, max-age=3600';
+      headers['Cache-Control'] = 'public, max-age=3600'; // Cache completed jobs for 1 hour
     } else {
-      headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'; // Don't cache active jobs
     }
 
     return NextResponse.json(response, { headers });
