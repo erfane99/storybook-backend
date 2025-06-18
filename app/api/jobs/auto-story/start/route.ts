@@ -1,3 +1,7 @@
+// Enhanced auto-story API route: app/api/jobs/auto-story/start/route.ts
+// PROJECT: Railway Backend
+// Replace entire file content with this enhanced version
+
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
@@ -49,10 +53,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Parse and validate input data
-    const { genre, characterDescription, cartoonImageUrl, audience } = await request.json();
+    // Parse and validate input data with comic book enhancements
+    const { 
+      genre, 
+      characterDescription, 
+      cartoonImageUrl, 
+      audience,
+      characterArtStyle = 'storybook',
+      layoutType = 'comic-book-panels'
+    } = await request.json();
 
-    // Validation - same as current generate-auto-story
+    // Enhanced validation
     if (!genre || !characterDescription || !cartoonImageUrl) {
       return NextResponse.json(
         { error: 'Missing required fields: genre, characterDescription, and cartoonImageUrl are required' },
@@ -68,6 +79,12 @@ export async function POST(request: Request) {
     const validGenres = ['adventure', 'siblings', 'bedtime', 'fantasy', 'history'];
     if (!validGenres.includes(genre)) {
       return NextResponse.json({ error: 'Invalid genre' }, { status: 400 });
+    }
+
+    // Validate character art style
+    const validStyles = ['storybook', 'semi-realistic', 'comic-book', 'flat-illustration', 'anime'];
+    if (!validStyles.includes(characterArtStyle)) {
+      return NextResponse.json({ error: 'Invalid character art style' }, { status: 400 });
     }
 
     // Check if user has already created a storybook (using auth client)
@@ -87,7 +104,7 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    // ENHANCED: Create job entry with comic book layout context
     const { error: insertError } = await adminSupabase
       .from('auto_story_jobs')
       .insert({
@@ -95,11 +112,13 @@ export async function POST(request: Request) {
         user_id: user.id,
         status: 'pending',
         progress: 0,
-        current_step: 'Initializing auto-story generation',
+        current_step: 'Initializing comic book auto-story generation',
         genre: genre,
         character_description: characterDescription,
         cartoon_image_url: cartoonImageUrl,
         audience: audience,
+        character_art_style: characterArtStyle, // NEW: Store character art style
+        layout_type: layoutType, // NEW: Store layout type
         created_at: now,
         updated_at: now,
         retry_count: 0,
@@ -114,11 +133,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Calculate estimated completion time (auto-story takes longer due to AI generation)
-    const estimatedMinutes = 5; // Auto-story generation typically takes 3-7 minutes
+    // Calculate estimated completion time for comic book generation
+    const estimatedMinutes = 6; // Comic book layout generation takes slightly longer
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    console.log(`✅ Created auto-story job: ${jobId} for user: ${user.id}`);
+    console.log(`✅ Created comic book auto-story job: ${jobId} for user: ${user.id} (Style: ${characterArtStyle}, Layout: ${layoutType})`);
 
     return NextResponse.json({
       jobId,
@@ -126,13 +145,16 @@ export async function POST(request: Request) {
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
       pollingUrl: `/api/jobs/auto-story/status/${jobId}`,
-      message: 'Auto-story generation job created. Processing will be handled by worker service.',
+      message: 'Comic book auto-story generation job created. Processing will be handled by worker service.',
       phases: [
         'Generating story content',
-        'Creating scene breakdown',
-        'Generating illustrations',
-        'Assembling final storybook'
-      ]
+        'Creating comic book scene breakdown',
+        'Generating panel illustrations',
+        'Assembling comic book pages',
+        'Finalizing storybook'
+      ],
+      characterArtStyle,
+      layoutType
     });
 
   } catch (error: unknown) {
