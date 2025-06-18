@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { jobManager } from '@/lib/background-jobs/job-manager';
-import { jobProcessor } from '@/lib/background-jobs/job-processor';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,25 +79,36 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create background job
-    const jobId = await jobManager.createAutoStoryJob({
-      genre,
-      characterDescription,
-      cartoonImageUrl,
-      audience
-    }, user.id);
+    // Generate job ID
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
 
-    if (!jobId) {
+    // Create job entry in database
+    const { error: insertError } = await supabase
+      .from('auto_story_jobs')
+      .insert({
+        id: jobId,
+        user_id: user.id,
+        status: 'pending',
+        progress: 0,
+        current_step: 'Initializing auto-story generation',
+        genre: genre,
+        character_description: characterDescription,
+        cartoon_image_url: cartoonImageUrl,
+        audience: audience,
+        created_at: now,
+        updated_at: now,
+        retry_count: 0,
+        max_retries: 3
+      });
+
+    if (insertError) {
+      console.error('❌ Failed to create auto-story job:', insertError);
       return NextResponse.json(
-        { error: 'Failed to create background job' },
+        { error: 'Failed to create auto-story job' },
         { status: 500 }
       );
     }
-
-    // Trigger immediate job processing
-    jobProcessor.processNextJobStep().catch(error => {
-      console.error(`Failed to start processing job ${jobId}:`, error);
-    });
 
     // Calculate estimated completion time (auto-story takes longer due to AI generation)
     const estimatedMinutes = 5; // Auto-story generation typically takes 3-7 minutes
@@ -113,7 +122,7 @@ export async function POST(request: Request) {
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
       pollingUrl: `/api/jobs/auto-story/status/${jobId}`,
-      message: 'Auto-story generation started. This will create a complete story and scenes automatically.',
+      message: 'Auto-story generation job created. Processing will be handled by worker service.',
       phases: [
         'Generating story content',
         'Creating scene breakdown',
@@ -126,7 +135,7 @@ export async function POST(request: Request) {
     console.error('❌ Auto-story job creation error:', error);
     return NextResponse.json(
       { 
-        error: error instanceof Error ? error.message : 'Failed to start auto-story generation',
+        error: error instanceof Error ? error.message : 'Failed to create auto-story job',
         details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }

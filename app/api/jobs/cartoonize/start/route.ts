@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { jobManager } from '@/lib/background-jobs/job-manager';
-import { jobProcessor } from '@/lib/background-jobs/job-processor';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,24 +117,35 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Create background job
-    const jobId = await jobManager.createCartoonizeJob({
-      prompt,
-      style,
-      imageUrl
-    }, userId);
+    // Generate job ID
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
 
-    if (!jobId) {
+    // Create job entry in database
+    const { error: insertError } = await supabase
+      .from('cartoonize_jobs')
+      .insert({
+        id: jobId,
+        user_id: userId,
+        status: 'pending',
+        progress: 0,
+        current_step: 'Initializing image cartoonization',
+        original_image_data: prompt,
+        style: style,
+        original_cloudinary_url: imageUrl,
+        created_at: now,
+        updated_at: now,
+        retry_count: 0,
+        max_retries: 3
+      });
+
+    if (insertError) {
+      console.error('❌ Failed to create cartoonize job:', insertError);
       return NextResponse.json(
-        { error: 'Failed to create background job' },
+        { error: 'Failed to create cartoonize job' },
         { status: 500 }
       );
     }
-
-    // Trigger immediate job processing
-    jobProcessor.processNextJobStep().catch(error => {
-      console.error(`Failed to start processing job ${jobId}:`, error);
-    });
 
     // Calculate estimated completion time (cartoonize is usually fast)
     const estimatedMinutes = 2; // Cartoonization typically takes 1-3 minutes
@@ -150,7 +159,7 @@ export async function POST(request: Request) {
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
       pollingUrl: `/api/jobs/cartoonize/status/${jobId}`,
-      message: 'Image cartoonization started. Your image will be transformed into cartoon style.',
+      message: 'Image cartoonization job created. Processing will be handled by worker service.',
       processingInfo: {
         style,
         promptLength: prompt.length,
@@ -162,7 +171,7 @@ export async function POST(request: Request) {
     console.error('❌ Cartoonize job creation error:', error);
     return NextResponse.json(
       { 
-        error: error instanceof Error ? error.message : 'Failed to start image cartoonization',
+        error: error instanceof Error ? error.message : 'Failed to create cartoonize job',
         details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }

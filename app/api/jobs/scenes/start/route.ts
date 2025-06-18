@@ -1,11 +1,21 @@
 import { NextResponse } from 'next/server';
-import { jobManager } from '@/lib/background-jobs/job-manager';
-import { jobProcessor } from '@/lib/background-jobs/job-processor';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables');
+      return NextResponse.json({ 
+        error: 'Database configuration error. Please check Supabase environment variables.',
+        configurationError: true
+      }, { status: 500 });
+    }
+
     // Parse and validate input data
     const { story, characterImage, audience = 'children' } = await request.json();
 
@@ -34,24 +44,39 @@ export async function POST(request: Request) {
       // Continue without user ID - scenes can be generated anonymously
     }
 
-    // Create background job
-    const jobId = await jobManager.createSceneJob({
-      story,
-      characterImage,
-      audience
-    }, userId);
+    // Generate job ID
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
 
-    if (!jobId) {
+    // Import Supabase client
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Create job entry in database
+    const { error: insertError } = await supabase
+      .from('scene_generation_jobs')
+      .insert({
+        id: jobId,
+        user_id: userId,
+        status: 'pending',
+        progress: 0,
+        current_step: 'Initializing scene generation',
+        story: story,
+        character_image: characterImage,
+        audience: audience,
+        created_at: now,
+        updated_at: now,
+        retry_count: 0,
+        max_retries: 3
+      });
+
+    if (insertError) {
+      console.error('❌ Failed to create scene job:', insertError);
       return NextResponse.json(
-        { error: 'Failed to create background job' },
+        { error: 'Failed to create scene job' },
         { status: 500 }
       );
     }
-
-    // Trigger immediate job processing
-    jobProcessor.processNextJobStep().catch(error => {
-      console.error(`Failed to start processing job ${jobId}:`, error);
-    });
 
     // Calculate estimated completion time based on story length and audience
     const wordCount = story.trim().split(/\s+/).length;
@@ -67,7 +92,7 @@ export async function POST(request: Request) {
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
       pollingUrl: `/api/jobs/scenes/status/${jobId}`,
-      message: 'Scene generation started. Your story will be broken down into illustrated scenes.',
+      message: 'Scene generation job created. Processing will be handled by worker service.',
       storyInfo: {
         wordCount,
         audience,
@@ -79,7 +104,7 @@ export async function POST(request: Request) {
     console.error('❌ Scene job creation error:', error);
     return NextResponse.json(
       { 
-        error: error instanceof Error ? error.message : 'Failed to start scene generation',
+        error: error instanceof Error ? error.message : 'Failed to create scene job',
         details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }

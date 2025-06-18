@@ -5,9 +5,11 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   return NextResponse.json({
     message: 'Storybook Backend API',
-    version: '1.0.0',
+    version: '2.0.0',
     status: 'running',
     timestamp: new Date().toISOString(),
+    architecture: 'microservices',
+    description: 'Pure API service - job processing handled by dedicated worker service',
     endpoints: {
       health: '/api/health',
       image: {
@@ -26,13 +28,26 @@ export async function GET() {
         createStorybook: '/api/story/create-storybook',
       },
       jobs: {
-        cartoonize: '/api/jobs/cartoonize/start',
-        autoStory: '/api/jobs/auto-story/start',
-        storybook: '/api/jobs/storybook/start',
-        scenes: '/api/jobs/scenes/start',
-        images: '/api/jobs/images/start',
-        health: '/api/jobs/health',
-        process: '/api/jobs/process',
+        cartoonize: {
+          start: '/api/jobs/cartoonize/start',
+          status: '/api/jobs/cartoonize/status/{jobId}'
+        },
+        autoStory: {
+          start: '/api/jobs/auto-story/start',
+          status: '/api/jobs/auto-story/status/{jobId}'
+        },
+        storybook: {
+          start: '/api/jobs/storybook/start',
+          status: '/api/jobs/storybook/status/{jobId}'
+        },
+        scenes: {
+          start: '/api/jobs/scenes/start',
+          status: '/api/jobs/scenes/status/{jobId}'
+        },
+        images: {
+          start: '/api/jobs/images/start',
+          status: '/api/jobs/images/status/{jobId}'
+        }
       },
     },
   });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { jobManager } from '@/lib/background-jobs/job-manager';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +17,20 @@ export async function GET(
       );
     }
 
-    // Get job status
-    const job = await jobManager.getJobStatus(jobid);
+    // Initialize Supabase client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    if (!job) {
+    // Get job status from image_generation_jobs table
+    const { data: job, error } = await supabase
+      .from('image_generation_jobs')
+      .select('*')
+      .eq('id', jobid)
+      .single();
+
+    if (error || !job) {
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
@@ -74,15 +84,19 @@ export async function GET(
     }
 
     // Add results if completed
-    if (job.status === 'completed' && job.result_data) {
-      response.result = job.result_data;
+    if (job.status === 'completed' && job.generated_image_url) {
+      response.result = {
+        url: job.generated_image_url,
+        prompt_used: job.final_prompt_used || job.image_prompt,
+        reused: job.is_reused_image || false
+      };
       response.message = 'Image generation completed successfully';
       
-      // Include generation information - Fixed type checking
+      // Include generation information
       response.generationInfo = {
-        reused: job.result_data && 'reused' in job.result_data ? job.result_data.reused : false,
-        promptUsed: job.result_data && 'prompt_used' in job.result_data ? job.result_data.prompt_used : 'Custom prompt',
-        style: job.input_data && 'style' in job.input_data ? job.input_data.style : 'storybook'
+        reused: job.is_reused_image || false,
+        promptUsed: job.final_prompt_used || job.image_prompt,
+        style: job.style || 'storybook'
       };
     }
 

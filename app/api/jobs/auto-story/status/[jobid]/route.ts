@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { jobManager } from '@/lib/background-jobs/job-manager';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +17,20 @@ export async function GET(
       );
     }
 
-    // Get job status
-    const job = await jobManager.getJobStatus(jobid);
+    // Initialize Supabase client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    if (!job) {
+    // Get job status from auto_story_jobs table
+    const { data: job, error } = await supabase
+      .from('auto_story_jobs')
+      .select('*')
+      .eq('id', jobid)
+      .single();
+
+    if (error || !job) {
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
@@ -69,14 +79,13 @@ export async function GET(
     }
 
     // Add results if completed
-    if (job.status === 'completed' && job.result_data) {
-      response.result = job.result_data;
+    if (job.status === 'completed' && job.storybook_entry_id) {
+      response.result = {
+        storybook_id: job.storybook_entry_id,
+        generated_story: job.generated_story
+      };
       response.message = 'Auto-story generation completed successfully';
-      
-      // Include storybook ID for redirection - Fixed type checking
-      if (job.result_data && 'storybook_id' in job.result_data && job.result_data.storybook_id) {
-        response.storybookUrl = `/storybook/${job.result_data.storybook_id}`;
-      }
+      response.storybookUrl = `/storybook/${job.storybook_entry_id}`;
     }
 
     // Add error information if failed

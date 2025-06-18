@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { jobManager } from '@/lib/background-jobs/job-manager';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +17,20 @@ export async function GET(
       );
     }
 
-    // Get job status
-    const job = await jobManager.getJobStatus(jobid);
+    // Initialize Supabase client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    if (!job) {
+    // Get job status from scene_generation_jobs table
+    const { data: job, error } = await supabase
+      .from('scene_generation_jobs')
+      .select('*')
+      .eq('id', jobid)
+      .single();
+
+    if (error || !job) {
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
@@ -69,21 +79,22 @@ export async function GET(
     }
 
     // Add results if completed
-    if (job.status === 'completed' && job.result_data) {
-      response.result = job.result_data;
+    if (job.status === 'completed' && job.generated_scenes) {
+      response.result = {
+        pages: job.generated_scenes,
+        character_description: job.character_description
+      };
       response.message = 'Scene generation completed successfully';
       
-      // Include scene count and page information - Fixed type checking
-      if (job.result_data && 'pages' in job.result_data && job.result_data.pages) {
-        const totalScenes = job.result_data.pages.reduce((total: number, page: any) => 
-          total + (page.scenes ? page.scenes.length : 0), 0
-        );
-        response.sceneInfo = {
-          totalPages: job.result_data.pages.length,
-          totalScenes,
-          averageScenesPerPage: Math.round(totalScenes / job.result_data.pages.length * 10) / 10
-        };
-      }
+      // Include scene count and page information
+      const totalScenes = job.generated_scenes.reduce((total: number, page: any) => 
+        total + (page.scenes ? page.scenes.length : 0), 0
+      );
+      response.sceneInfo = {
+        totalPages: job.generated_scenes.length,
+        totalScenes,
+        averageScenesPerPage: Math.round(totalScenes / job.generated_scenes.length * 10) / 10
+      };
     }
 
     // Add error information if failed

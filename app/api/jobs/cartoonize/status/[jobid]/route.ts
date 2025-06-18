@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { jobManager } from '@/lib/background-jobs/job-manager';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +17,20 @@ export async function GET(
       );
     }
 
-    // Get job status
-    const job = await jobManager.getJobStatus(jobid);
+    // Initialize Supabase client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    if (!job) {
+    // Get job status from cartoonize_jobs table
+    const { data: job, error } = await supabase
+      .from('cartoonize_jobs')
+      .select('*')
+      .eq('id', jobid)
+      .single();
+
+    if (error || !job) {
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
@@ -74,22 +84,17 @@ export async function GET(
     }
 
     // Add results if completed
-    if (job.status === 'completed' && job.result_data) {
-      response.result = job.result_data;
+    if (job.status === 'completed' && job.generated_image_url) {
+      response.result = {
+        url: job.generated_image_url,
+        cached: !!job.final_cloudinary_url
+      };
       response.message = 'Image cartoonization completed successfully';
       
-      // Include processing information - Fixed type checking
-      if (job.result_data && 'cached' in job.result_data && job.result_data.cached) {
-        response.processingInfo = {
-          cached: true,
-          message: 'Result retrieved from cache for faster delivery'
-        };
-      } else {
-        response.processingInfo = {
-          cached: false,
-          message: 'New cartoon image generated'
-        };
-      }
+      response.processingInfo = {
+        cached: !!job.final_cloudinary_url,
+        message: job.final_cloudinary_url ? 'Result retrieved from cache for faster delivery' : 'New cartoon image generated'
+      };
     }
 
     // Add error information if failed

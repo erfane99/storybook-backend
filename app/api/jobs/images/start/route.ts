@@ -1,11 +1,21 @@
 import { NextResponse } from 'next/server';
-import { jobManager } from '@/lib/background-jobs/job-manager';
-import { jobProcessor } from '@/lib/background-jobs/job-processor';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables');
+      return NextResponse.json({ 
+        error: 'Database configuration error. Please check Supabase environment variables.',
+        configurationError: true
+      }, { status: 500 });
+    }
+
     // Parse and validate input data
     const { 
       image_prompt, 
@@ -50,28 +60,43 @@ export async function POST(request: Request) {
       // Continue without user ID - image generation can work anonymously
     }
 
-    // Create background job
-    const jobId = await jobManager.createImageJob({
-      image_prompt,
-      character_description,
-      emotion,
-      audience,
-      isReusedImage,
-      cartoon_image,
-      style
-    }, userId);
+    // Generate job ID
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
 
-    if (!jobId) {
+    // Import Supabase client
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Create job entry in database
+    const { error: insertError } = await supabase
+      .from('image_generation_jobs')
+      .insert({
+        id: jobId,
+        user_id: userId,
+        status: 'pending',
+        progress: 0,
+        current_step: 'Initializing image generation',
+        image_prompt: image_prompt,
+        character_description: character_description,
+        emotion: emotion,
+        audience: audience,
+        is_reused_image: isReusedImage,
+        cartoon_image: cartoon_image,
+        style: style,
+        created_at: now,
+        updated_at: now,
+        retry_count: 0,
+        max_retries: 3
+      });
+
+    if (insertError) {
+      console.error('❌ Failed to create image job:', insertError);
       return NextResponse.json(
-        { error: 'Failed to create background job' },
+        { error: 'Failed to create image job' },
         { status: 500 }
       );
     }
-
-    // Trigger immediate job processing
-    jobProcessor.processNextJobStep().catch(error => {
-      console.error(`Failed to start processing job ${jobId}:`, error);
-    });
 
     // Calculate estimated completion time (single image generation)
     const estimatedMinutes = 2; // Single image generation typically takes 1-3 minutes
@@ -85,7 +110,7 @@ export async function POST(request: Request) {
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
       pollingUrl: `/api/jobs/images/status/${jobId}`,
-      message: 'Image generation started. Creating a custom illustration for your scene.',
+      message: 'Image generation job created. Processing will be handled by worker service.',
       imageInfo: {
         style,
         audience,
@@ -99,7 +124,7 @@ export async function POST(request: Request) {
     console.error('❌ Image job creation error:', error);
     return NextResponse.json(
       { 
-        error: error instanceof Error ? error.message : 'Failed to start image generation',
+        error: error instanceof Error ? error.message : 'Failed to create image job',
         details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
