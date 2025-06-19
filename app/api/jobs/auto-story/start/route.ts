@@ -3,9 +3,7 @@
 // Replace entire file content with this enhanced version
 
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +11,10 @@ export async function POST(request: Request) {
   try {
     // Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
       console.error('❌ Missing Supabase environment variables');
       return NextResponse.json({ 
         error: 'Database configuration error. Please check Supabase environment variables.',
@@ -23,35 +22,41 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Initialize dual Supabase clients
-    const cookieStore = cookies();
-    const authSupabase = createRouteHandlerClient({
-      cookies: () => cookieStore,
-    });
+    // ✅ JWT Authentication - Extract and validate Bearer token
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('❌ Missing or invalid Authorization header');
+      return NextResponse.json(
+        { error: 'Authentication required. Please provide a valid Bearer token.' },
+        { status: 401 }
+      );
+    }
 
-    // Admin client for database operations (bypasses RLS)
+    const token = authHeader.replace('Bearer ', '');
+    if (!token) {
+      console.error('❌ Empty Bearer token');
+      return NextResponse.json(
+        { error: 'Authentication token is required' },
+        { status: 401 }
+      );
+    }
+
+    // Initialize Supabase clients
+    const authSupabase = createClient(supabaseUrl, supabaseAnonKey);
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get authenticated user using auth client
-    const {
-      data: { user },
-      error: authError,
-    } = await authSupabase.auth.getUser();
+    // ✅ Validate JWT token and get user
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser(token);
 
-    if (authError) {
-      console.error('Auth error:', authError);
+    if (authError || !user) {
+      console.error('❌ JWT validation failed:', authError?.message || 'Invalid token');
       return NextResponse.json(
-        { error: 'Authentication required for auto-story generation' },
+        { error: 'Invalid or expired authentication token' },
         { status: 401 }
       );
     }
 
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Please sign in to generate an automatic story' },
-        { status: 401 }
-      );
-    }
+    console.log(`✅ User authenticated for auto-story: ${user.id}`);
 
     // Parse and validate input data with comic book enhancements
     const { 
@@ -62,6 +67,15 @@ export async function POST(request: Request) {
       characterArtStyle = 'storybook',
       layoutType = 'comic-book-panels'
     } = await request.json();
+
+    console.log('📥 Auto-story request:', {
+      genre,
+      audience,
+      characterArtStyle,
+      layoutType,
+      hasCharacterDescription: !!characterDescription,
+      hasCartoonImageUrl: !!cartoonImageUrl
+    });
 
     // Enhanced validation
     if (!genre || !characterDescription || !cartoonImageUrl) {
@@ -87,8 +101,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid character art style' }, { status: 400 });
     }
 
-    // Check if user has already created a storybook (using auth client)
-    const { count } = await authSupabase
+    // ✅ Check if user has already created a storybook (using admin client with user filter)
+    const { count } = await adminSupabase
       .from('storybook_entries')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id);
@@ -103,6 +117,8 @@ export async function POST(request: Request) {
     // Generate job ID
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
+
+    console.log(`🎨 Creating auto-story job ${jobId} for user ${user.id}`);
 
     // ENHANCED: Create job entry with comic book layout context
     const { error: insertError } = await adminSupabase
@@ -167,4 +183,11 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+// Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+  });
 }
