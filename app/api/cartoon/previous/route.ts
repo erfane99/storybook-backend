@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,9 +15,10 @@ export async function GET(request: Request) {
   try {
     // Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
       console.error('❌ Missing Supabase environment variables');
       return NextResponse.json({ 
         error: 'Database configuration error. Please check Supabase environment variables.',
@@ -27,28 +26,41 @@ export async function GET(request: Request) {
       }, { status: 500 });
     }
 
-    // Initialize dual Supabase clients
-    const cookieStore = cookies();
-    const authSupabase = createRouteHandlerClient({
-      cookies: () => cookieStore,
-    });
-
-    // Admin client for database operations (bypasses RLS)
-    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Get authenticated user
-    const {
-      data: { user },
-      error: authError,
-    } = await authSupabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('Auth error:', authError);
+    // ✅ JWT Authentication - Extract and validate Bearer token
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('❌ Missing or invalid Authorization header');
       return NextResponse.json(
-        { error: 'Authentication required to view previous cartoons' },
+        { error: 'Authentication required. Please provide a valid Bearer token.' },
         { status: 401 }
       );
     }
+
+    const token = authHeader.replace('Bearer ', '');
+    if (!token) {
+      console.error('❌ Empty Bearer token');
+      return NextResponse.json(
+        { error: 'Authentication token is required' },
+        { status: 401 }
+      );
+    }
+
+    // Initialize Supabase clients
+    const authSupabase = createClient(supabaseUrl, supabaseAnonKey);
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ✅ Validate JWT token and get user
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser(token);
+
+    if (authError || !user) {
+      console.error('❌ JWT validation failed:', authError?.message || 'Invalid token');
+      return NextResponse.json(
+        { error: 'Invalid or expired authentication token' },
+        { status: 401 }
+      );
+    }
+
+    console.log(`✅ User authenticated for previous cartoons: ${user.id}`);
 
     // Parse query parameters
     const url = new URL(request.url);
@@ -69,29 +81,29 @@ export async function GET(request: Request) {
     console.log(`📚 Fetching previous cartoons for user ${user.id} - Limit: ${limit}, Offset: ${offset}, Style: ${styleFilter || 'all'}`);
 
     try {
-      // Build query with filters
+      // ✅ Build query with filters (using correct database schema field names)
       let query = adminSupabase
         .from('cartoon_images')
         .select(`
           id,
-          original_url,
-          generated_url,
-          style,
+          original_cloudinary_url,
+          cartoonized_cloudinary_url,
+          cartoon_style,
           character_description,
           original_prompt,
           generation_count,
-          cloudinary_public_id,
+          cartoonized_cloudinary_public_id,
           created_at
         `)
         .eq('user_id', user.id);
 
-      // Apply style filter if provided
+      // Apply style filter if provided (using correct database field name)
       if (styleFilter) {
-        query = query.eq('style', styleFilter);
+        query = query.eq('cartoon_style', styleFilter);
       }
 
       // Apply sorting
-      query = query.order(sortBy, { ascending: sortOrder === 'asc' });
+      query = query.order(sortBy === 'style' ? 'cartoon_style' : sortBy, { ascending: sortOrder === 'asc' });
 
       // Apply pagination
       query = query.range(offset, offset + limit - 1);
@@ -110,7 +122,7 @@ export async function GET(request: Request) {
         .eq('user_id', user.id);
 
       if (styleFilter) {
-        countQuery = countQuery.eq('style', styleFilter);
+        countQuery = countQuery.eq('cartoon_style', styleFilter);
       }
 
       const { count: totalCount, error: countError } = await countQuery;
@@ -119,31 +131,34 @@ export async function GET(request: Request) {
         console.warn('⚠️ Count query failed:', countError);
       }
 
+      // ✅ Map database fields to frontend-expected names
+      const normalizedCartoons = cartoons?.map((cartoon: any) => ({
+        id: cartoon.id,
+        originalUrl: cartoon.original_cloudinary_url,    // Map DB field to frontend expectation
+        cartoonUrl: cartoon.cartoonized_cloudinary_url,  // Map DB field to frontend expectation
+        style: cartoon.cartoon_style,                    // Map DB field to frontend expectation
+        characterDescription: cartoon.character_description,
+        originalPrompt: cartoon.original_prompt,
+        generationCount: cartoon.generation_count,
+        cloudinaryPublicId: cartoon.cartoonized_cloudinary_public_id,
+        createdAt: cartoon.created_at,
+        createdAtFormatted: new Date(cartoon.created_at).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      })) || [];
+
       // Organize data by style for better UX
-      const cartoonsByStyle = cartoons?.reduce((acc: any, cartoon: any) => {
+      const cartoonsByStyle = normalizedCartoons.reduce((acc: any, cartoon: any) => {
         if (!acc[cartoon.style]) {
           acc[cartoon.style] = [];
         }
-        acc[cartoon.style].push({
-          id: cartoon.id,
-          originalUrl: cartoon.original_url,
-          cartoonUrl: cartoon.generated_url,
-          style: cartoon.style,
-          characterDescription: cartoon.character_description,
-          originalPrompt: cartoon.original_prompt,
-          generationCount: cartoon.generation_count,
-          cloudinaryPublicId: cartoon.cloudinary_public_id,
-          createdAt: cartoon.created_at,
-          createdAtFormatted: new Date(cartoon.created_at).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-        });
+        acc[cartoon.style].push(cartoon);
         return acc;
-      }, {}) || {};
+      }, {});
 
       // Calculate pagination metadata
       const hasMore = totalCount ? (offset + limit) < totalCount : false;
@@ -151,16 +166,16 @@ export async function GET(request: Request) {
       const currentPage = Math.floor(offset / limit) + 1;
 
       // Generate style statistics
-      const styleStats = cartoons?.reduce((acc: any, cartoon: any) => {
+      const styleStats = normalizedCartoons.reduce((acc: any, cartoon: any) => {
         acc[cartoon.style] = (acc[cartoon.style] || 0) + 1;
         return acc;
-      }, {}) || {};
+      }, {});
 
-      console.log(`✅ Fetched ${cartoons?.length || 0} cartoons for user ${user.id}`);
+      console.log(`✅ Fetched ${normalizedCartoons.length} cartoons for user ${user.id}`);
 
       return NextResponse.json({
         success: true,
-        cartoons: cartoons || [],
+        cartoons: normalizedCartoons,
         cartoonsByStyle,
         pagination: {
           limit,
