@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
 import cloudinary from '@/lib/cloudinary';
 
 export const dynamic = 'force-dynamic';
@@ -20,9 +18,10 @@ export async function POST(request: Request) {
   try {
     // Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
       console.error('❌ Missing Supabase environment variables');
       return NextResponse.json({ 
         error: 'Database configuration error. Please check Supabase environment variables.',
@@ -39,28 +38,41 @@ export async function POST(request: Request) {
       );
     }
 
-    // Initialize dual Supabase clients
-    const cookieStore = cookies();
-    const authSupabase = createRouteHandlerClient({
-      cookies: () => cookieStore,
-    });
-
-    // Admin client for database operations (bypasses RLS)
-    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Get authenticated user
-    const {
-      data: { user },
-      error: authError,
-    } = await authSupabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('Auth error:', authError);
+    // ✅ JWT Authentication - Extract and validate Bearer token
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('❌ Missing or invalid Authorization header');
       return NextResponse.json(
-        { error: 'Authentication required to save cartoon images' },
+        { error: 'Authentication required. Please provide a valid Bearer token.' },
         { status: 401 }
       );
     }
+
+    const token = authHeader.replace('Bearer ', '');
+    if (!token) {
+      console.error('❌ Empty Bearer token');
+      return NextResponse.json(
+        { error: 'Authentication token is required' },
+        { status: 401 }
+      );
+    }
+
+    // Initialize Supabase clients
+    const authSupabase = createClient(supabaseUrl, supabaseAnonKey);
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ✅ Validate JWT token and get user
+    const { data: { user }, error: authError } = await authSupabase.auth.getUser(token);
+
+    if (authError || !user) {
+      console.error('❌ JWT validation failed:', authError?.message || 'Invalid token');
+      return NextResponse.json(
+        { error: 'Invalid or expired authentication token' },
+        { status: 401 }
+      );
+    }
+
+    console.log(`✅ User authenticated: ${user.id}`);
 
     // Parse and validate input data
     const {
