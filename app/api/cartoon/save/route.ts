@@ -5,11 +5,11 @@ import cloudinary from '@/lib/cloudinary';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes for image processing
 
-// ✅ FIXED: Interface matches frontend field names
+// ✅ Keep frontend interface clean
 interface SaveCartoonRequest {
-  originalImageUrl: string;        // ✅ Changed from originalCloudinaryUrl
-  cartoonImageUrl: string;         // ✅ Changed from temporaryCartoonUrl
-  artStyle: string;                // ✅ Changed from cartoonStyle
+  originalImageUrl: string;
+  cartoonImageUrl: string;
+  artStyle: string;
   characterDescription?: string;
   originalPrompt?: string;
   generationCount?: number;
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // ✅ JWT Authentication - Extract and validate Bearer token
+    // JWT Authentication
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       console.error('❌ Missing or invalid Authorization header');
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     const authSupabase = createClient(supabaseUrl, supabaseAnonKey);
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // ✅ Validate JWT token and get user
+    // Validate JWT token and get user
     const { data: { user }, error: authError } = await authSupabase.auth.getUser(token);
 
     if (authError || !user) {
@@ -81,25 +81,25 @@ export async function POST(request: Request) {
 
     console.log(`✅ User authenticated: ${user.id}`);
 
-    // ✅ FIXED: Parse with correct field names
+    // Parse request with clean frontend interface
     const {
-      originalImageUrl,     // ✅ Changed from originalCloudinaryUrl
-      cartoonImageUrl,      // ✅ Changed from temporaryCartoonUrl
-      artStyle,             // ✅ Changed from cartoonStyle
+      originalImageUrl,
+      cartoonImageUrl,
+      artStyle,
       characterDescription,
       originalPrompt,
       generationCount = 1,
       metadata
     }: SaveCartoonRequest = await request.json();
 
-    console.log('📥 Received save request with fields:', {
+    console.log('📥 Received save request:', {
       originalImageUrl: !!originalImageUrl,
       cartoonImageUrl: !!cartoonImageUrl,
       artStyle,
       characterDescription: !!characterDescription
     });
 
-    // ✅ FIXED: Input validation with correct field names
+    // Input validation
     if (!originalImageUrl?.trim()) {
       console.error('❌ Missing originalImageUrl');
       return NextResponse.json({ error: 'Original image URL is required' }, { status: 400 });
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Art style is required' }, { status: 400 });
     }
 
-    // ✅ FIXED: Validate art style (updated field name)
+    // Validate art style
     const validStyles = ['storybook', 'semi-realistic', 'comic-book', 'flat-illustration', 'anime'];
     if (!validStyles.includes(artStyle)) {
       return NextResponse.json({ 
@@ -137,7 +137,7 @@ export async function POST(request: Request) {
     let cloudinaryPublicId: string | null = null;
 
     try {
-      // Step 1: Download temporary image from OpenAI URL
+      // Step 1: Download temporary image
       console.log('📥 Downloading temporary cartoon image...');
       const imageResponse = await fetch(cartoonImageUrl, {
         method: 'GET',
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
 
       console.log(`✅ Downloaded image: ${imageBuffer.length} bytes`);
 
-      // Step 2: Upload to Cloudinary in organized folder structure
+      // Step 2: Upload to Cloudinary
       const folderPath = `storybook/cartoons/${user.id}`;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const publicId = `${folderPath}/cartoon-${artStyle}-${timestamp}`;
@@ -196,29 +196,36 @@ export async function POST(request: Request) {
 
       console.log(`✅ Uploaded to Cloudinary: ${permanentCloudinaryUrl}`);
 
-      // Step 3: Save to database using admin client (bypasses RLS)
+      // ✅ CRITICAL FIX: Map frontend fields to actual database column names
+      const dbInsertData = {
+        user_id: user.id,
+        // Map frontend fields to database schema
+        original_cloudinary_url: originalImageUrl,           // frontend: originalImageUrl
+        cartoonized_cloudinary_url: permanentCloudinaryUrl, // frontend: cartoonImageUrl (permanent)
+        cartoon_style: artStyle,                             // frontend: artStyle
+        cartoonized_cloudinary_public_id: cloudinaryPublicId,
+        character_description: characterDescription || '',   // NOT NULL constraint
+        original_prompt: originalPrompt || null,
+        generation_count: generationCount,
+        // created_at and updated_at are auto-generated
+      };
+
+      console.log('💾 Mapping fields for database insert:', {
+        frontend_originalImageUrl: 'original_cloudinary_url',
+        frontend_artStyle: 'cartoon_style',
+        frontend_characterDescription: 'character_description'
+      });
+
       const { data: savedCartoon, error: dbError } = await adminSupabase
         .from('cartoon_images')
-        .insert({
-          user_id: user.id,
-          original_url: originalImageUrl,      // ✅ Uses correct field
-          generated_url: permanentCloudinaryUrl,
-          style: artStyle,                     // ✅ Uses correct field
-          character_description: characterDescription || null,
-          original_prompt: originalPrompt || null,
-          generation_count: generationCount,
-          cloudinary_public_id: cloudinaryPublicId,
-          created_at: new Date().toISOString(),
-          // Store metadata if provided
-          metadata: metadata ? JSON.stringify(metadata) : null
-        })
+        .insert(dbInsertData)
         .select('id, created_at')
         .single();
 
       if (dbError) {
         console.error('❌ Database save error:', dbError);
         
-        // Rollback: Delete from Cloudinary if database save fails
+        // Rollback Cloudinary upload
         if (cloudinaryPublicId) {
           try {
             console.log('🔄 Rolling back Cloudinary upload...');
@@ -234,22 +241,21 @@ export async function POST(request: Request) {
 
       console.log(`✅ Cartoon image saved successfully - ID: ${savedCartoon.id}`);
 
-      // ✅ Return response matching CartoonSaveResponse interface
+      // Return clean response matching frontend expectations
       return NextResponse.json({
         id: savedCartoon.id,
         success: true,
         message: 'Cartoon image saved permanently',
         savedAt: savedCartoon.created_at,
-        // Additional useful data
         permanentUrl: permanentCloudinaryUrl,
         cloudinaryPublicId,
-        style: artStyle,
+        style: artStyle, // Return frontend field name
       });
 
     } catch (processingError: any) {
       console.error('❌ Image processing error:', processingError);
       
-      // Additional cleanup if needed
+      // Cleanup if needed
       if (permanentCloudinaryUrl && cloudinaryPublicId) {
         try {
           await cloudinary.uploader.destroy(cloudinaryPublicId);
