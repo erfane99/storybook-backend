@@ -5,13 +5,20 @@ import cloudinary from '@/lib/cloudinary';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes for image processing
 
+// ✅ FIXED: Interface matches frontend field names
 interface SaveCartoonRequest {
-  originalCloudinaryUrl: string;
-  temporaryCartoonUrl: string;
-  cartoonStyle: string;
+  originalImageUrl: string;        // ✅ Changed from originalCloudinaryUrl
+  cartoonImageUrl: string;         // ✅ Changed from temporaryCartoonUrl
+  artStyle: string;                // ✅ Changed from cartoonStyle
   characterDescription?: string;
   originalPrompt?: string;
   generationCount?: number;
+  metadata?: {
+    processingTime?: number;
+    modelVersion?: string;
+    quality?: 'standard' | 'high' | 'premium';
+    tags?: string[];
+  };
 }
 
 export async function POST(request: Request) {
@@ -74,46 +81,57 @@ export async function POST(request: Request) {
 
     console.log(`✅ User authenticated: ${user.id}`);
 
-    // Parse and validate input data
+    // ✅ FIXED: Parse with correct field names
     const {
-      originalCloudinaryUrl,
-      temporaryCartoonUrl,
-      cartoonStyle,
+      originalImageUrl,     // ✅ Changed from originalCloudinaryUrl
+      cartoonImageUrl,      // ✅ Changed from temporaryCartoonUrl
+      artStyle,             // ✅ Changed from cartoonStyle
       characterDescription,
       originalPrompt,
-      generationCount = 1
+      generationCount = 1,
+      metadata
     }: SaveCartoonRequest = await request.json();
 
-    // Input validation
-    if (!originalCloudinaryUrl?.trim()) {
-      return NextResponse.json({ error: 'Original Cloudinary URL is required' }, { status: 400 });
+    console.log('📥 Received save request with fields:', {
+      originalImageUrl: !!originalImageUrl,
+      cartoonImageUrl: !!cartoonImageUrl,
+      artStyle,
+      characterDescription: !!characterDescription
+    });
+
+    // ✅ FIXED: Input validation with correct field names
+    if (!originalImageUrl?.trim()) {
+      console.error('❌ Missing originalImageUrl');
+      return NextResponse.json({ error: 'Original image URL is required' }, { status: 400 });
     }
 
-    if (!temporaryCartoonUrl?.trim()) {
-      return NextResponse.json({ error: 'Temporary cartoon URL is required' }, { status: 400 });
+    if (!cartoonImageUrl?.trim()) {
+      console.error('❌ Missing cartoonImageUrl');
+      return NextResponse.json({ error: 'Cartoon image URL is required' }, { status: 400 });
     }
 
-    if (!cartoonStyle?.trim()) {
-      return NextResponse.json({ error: 'Cartoon style is required' }, { status: 400 });
+    if (!artStyle?.trim()) {
+      console.error('❌ Missing artStyle');
+      return NextResponse.json({ error: 'Art style is required' }, { status: 400 });
     }
 
-    // Validate cartoon style
+    // ✅ FIXED: Validate art style (updated field name)
     const validStyles = ['storybook', 'semi-realistic', 'comic-book', 'flat-illustration', 'anime'];
-    if (!validStyles.includes(cartoonStyle)) {
+    if (!validStyles.includes(artStyle)) {
       return NextResponse.json({ 
-        error: `Invalid cartoon style. Must be one of: ${validStyles.join(', ')}` 
+        error: `Invalid art style. Must be one of: ${validStyles.join(', ')}` 
       }, { status: 400 });
     }
 
     // Validate URLs
     try {
-      new URL(originalCloudinaryUrl);
-      new URL(temporaryCartoonUrl);
+      new URL(originalImageUrl);
+      new URL(cartoonImageUrl);
     } catch (urlError) {
       return NextResponse.json({ error: 'Invalid URL format provided' }, { status: 400 });
     }
 
-    console.log(`🎨 Saving cartoon image for user ${user.id} - Style: ${cartoonStyle}`);
+    console.log(`🎨 Saving cartoon image for user ${user.id} - Style: ${artStyle}`);
 
     let permanentCloudinaryUrl: string | null = null;
     let cloudinaryPublicId: string | null = null;
@@ -121,7 +139,7 @@ export async function POST(request: Request) {
     try {
       // Step 1: Download temporary image from OpenAI URL
       console.log('📥 Downloading temporary cartoon image...');
-      const imageResponse = await fetch(temporaryCartoonUrl, {
+      const imageResponse = await fetch(cartoonImageUrl, {
         method: 'GET',
         headers: {
           'User-Agent': 'Storybook-Backend/1.0'
@@ -143,7 +161,7 @@ export async function POST(request: Request) {
       // Step 2: Upload to Cloudinary in organized folder structure
       const folderPath = `storybook/cartoons/${user.id}`;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const publicId = `${folderPath}/cartoon-${cartoonStyle}-${timestamp}`;
+      const publicId = `${folderPath}/cartoon-${artStyle}-${timestamp}`;
 
       console.log('📤 Uploading to Cloudinary...');
       
@@ -160,7 +178,7 @@ export async function POST(request: Request) {
               { quality: 'auto:good' },
               { fetch_format: 'auto' }
             ],
-            tags: [`user-${user.id}`, `style-${cartoonStyle}`, 'cartoon', 'permanent']
+            tags: [`user-${user.id}`, `style-${artStyle}`, 'cartoon', 'permanent']
           },
           (error, result) => {
             if (error) {
@@ -183,14 +201,16 @@ export async function POST(request: Request) {
         .from('cartoon_images')
         .insert({
           user_id: user.id,
-          original_url: originalCloudinaryUrl,
+          original_url: originalImageUrl,      // ✅ Uses correct field
           generated_url: permanentCloudinaryUrl,
-          style: cartoonStyle,
+          style: artStyle,                     // ✅ Uses correct field
           character_description: characterDescription || null,
           original_prompt: originalPrompt || null,
           generation_count: generationCount,
           cloudinary_public_id: cloudinaryPublicId,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          // Store metadata if provided
+          metadata: metadata ? JSON.stringify(metadata) : null
         })
         .select('id, created_at')
         .single();
@@ -214,14 +234,16 @@ export async function POST(request: Request) {
 
       console.log(`✅ Cartoon image saved successfully - ID: ${savedCartoon.id}`);
 
+      // ✅ Return response matching CartoonSaveResponse interface
       return NextResponse.json({
-        success: true,
         id: savedCartoon.id,
+        success: true,
+        message: 'Cartoon image saved permanently',
+        savedAt: savedCartoon.created_at,
+        // Additional useful data
         permanentUrl: permanentCloudinaryUrl,
         cloudinaryPublicId,
-        style: cartoonStyle,
-        createdAt: savedCartoon.created_at,
-        message: 'Cartoon image saved permanently'
+        style: artStyle,
       });
 
     } catch (processingError: any) {
