@@ -3,9 +3,8 @@
 // Replace entire file content with this enhanced version
 
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
+import { validateAuthToken, extractUserId, createAuthErrorResponse } from '@/lib/auth-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,25 +22,22 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Initialize dual Supabase clients
-    const cookieStore = cookies();
-    const authSupabase = createRouteHandlerClient({
-      cookies: () => cookieStore,
-    });
+    // ✅ JWT Authentication - Use new auth utility
+    const authResult = await validateAuthToken(request);
+    const { userId, error: authError } = extractUserId(authResult);
+
+    if (authError || !userId) {
+      console.error('❌ JWT validation failed:', authError);
+      return NextResponse.json(
+        createAuthErrorResponse(authError || 'Authentication required'),
+        { status: 401 }
+      );
+    }
+
+    console.log(`✅ User authenticated for storybook job: ${userId}`);
 
     // Admin client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Get authenticated user using auth client
-    const {
-      data: { user },
-      error: authError,
-    } = await authSupabase.auth.getUser();
-
-    if (authError) {
-      console.error('Auth error:', authError);
-      // Continue without user_id if auth fails for anonymous users
-    }
 
     // Parse and validate input data with comic book enhancements
     const { 
@@ -89,19 +85,17 @@ export async function POST(request: Request) {
     
     console.log(`📖 Creating comic book storybook job - Title: "${title}", Pages: ${validatedPages.length}, Mode: ${processingMode}, Art Style: ${characterArtStyle}`);
 
-    // Check if user has already created a storybook (using auth client)
-    if (user?.id) {
-      const { count } = await authSupabase
-        .from('storybook_entries')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+    // Check if user has already created a storybook (using admin client with user filter)
+    const { count } = await adminSupabase
+      .from('storybook_entries')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
 
-      if (count && count > 0) {
-        return NextResponse.json(
-          { error: "You've already created your free storybook. Upgrade to unlock more." },
-          { status: 403 }
-        );
-      }
+    if (count && count > 0) {
+      return NextResponse.json(
+        { error: "You've already created your free storybook. Upgrade to unlock more." },
+        { status: 403 }
+      );
     }
 
     // Generate job ID
@@ -113,7 +107,7 @@ export async function POST(request: Request) {
       .from('storybook_jobs')
       .insert({
         id: jobId,
-        user_id: user?.id,
+        user_id: userId, // ✅ Now properly using validated user ID
         status: 'pending',
         progress: 0,
         current_step: 'Initializing comic book storybook generation',
@@ -153,7 +147,7 @@ export async function POST(request: Request) {
     
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    console.log(`✅ Created comic book storybook job: ${jobId} for user: ${user?.id || 'anonymous'} (${estimatedMinutes}min estimated, mode: ${processingMode}, style: ${characterArtStyle})`);
+    console.log(`✅ Created comic book storybook job: ${jobId} for user: ${userId} (${estimatedMinutes}min estimated, mode: ${processingMode}, style: ${characterArtStyle})`);
 
     return NextResponse.json({
       jobId,
@@ -184,4 +178,11 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+// Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+  });
 }
