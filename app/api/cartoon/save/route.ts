@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { validateAuthToken, extractUserId, createAuthErrorResponse } from '@/lib/auth-utils';
 import cloudinary from '@/lib/cloudinary';
 
 export const dynamic = 'force-dynamic';
@@ -25,10 +26,9 @@ export async function POST(request: Request) {
   try {
     // Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseServiceKey) {
       console.error('❌ Missing Supabase environment variables');
       return NextResponse.json({ 
         error: 'Database configuration error. Please check Supabase environment variables.',
@@ -45,41 +45,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // JWT Authentication
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('❌ Missing or invalid Authorization header');
+    // ✅ JWT Authentication - Use standardized auth utility
+    const authResult = await validateAuthToken(request);
+    const { userId, error: authError } = extractUserId(authResult);
+
+    if (authError || !userId) {
+      console.error('❌ JWT validation failed:', authError);
       return NextResponse.json(
-        { error: 'Authentication required. Please provide a valid Bearer token.' },
+        createAuthErrorResponse(authError || 'Authentication required'),
         { status: 401 }
       );
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    if (!token) {
-      console.error('❌ Empty Bearer token');
-      return NextResponse.json(
-        { error: 'Authentication token is required' },
-        { status: 401 }
-      );
-    }
+    console.log(`✅ User authenticated: ${userId}`);
 
-    // Initialize Supabase clients
-    const authSupabase = createClient(supabaseUrl, supabaseAnonKey);
+    // Initialize admin Supabase client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Validate JWT token and get user
-    const { data: { user }, error: authError } = await authSupabase.auth.getUser(token);
-
-    if (authError || !user) {
-      console.error('❌ JWT validation failed:', authError?.message || 'Invalid token');
-      return NextResponse.json(
-        { error: 'Invalid or expired authentication token' },
-        { status: 401 }
-      );
-    }
-
-    console.log(`✅ User authenticated: ${user.id}`);
 
     // Parse request with clean frontend interface
     const {
@@ -131,7 +112,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid URL format provided' }, { status: 400 });
     }
 
-    console.log(`🎨 Saving cartoon image for user ${user.id} - Style: ${artStyle}`);
+    console.log(`🎨 Saving cartoon image for user ${userId} - Style: ${artStyle}`);
 
     let permanentCloudinaryUrl: string | null = null;
     let cloudinaryPublicId: string | null = null;
@@ -159,7 +140,7 @@ export async function POST(request: Request) {
       console.log(`✅ Downloaded image: ${imageBuffer.length} bytes`);
 
       // Step 2: Upload to Cloudinary
-      const folderPath = `storybook/cartoons/${user.id}`;
+      const folderPath = `storybook/cartoons/${userId}`;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const publicId = `${folderPath}/cartoon-${artStyle}-${timestamp}`;
 
@@ -178,7 +159,7 @@ export async function POST(request: Request) {
               { quality: 'auto:good' },
               { fetch_format: 'auto' }
             ],
-            tags: [`user-${user.id}`, `style-${artStyle}`, 'cartoon', 'permanent']
+            tags: [`user-${userId}`, `style-${artStyle}`, 'cartoon', 'permanent']
           },
           (error, result) => {
             if (error) {
@@ -198,7 +179,7 @@ export async function POST(request: Request) {
 
       // ✅ CRITICAL FIX: Map frontend fields to actual database column names
       const dbInsertData = {
-        user_id: user.id,
+        user_id: userId,
         // Map frontend fields to database schema
         original_cloudinary_url: originalImageUrl,           // frontend: originalImageUrl
         cartoonized_cloudinary_url: permanentCloudinaryUrl, // frontend: cartoonImageUrl (permanent)

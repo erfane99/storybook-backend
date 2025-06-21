@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { validateAuthToken, extractUserId, createAuthErrorResponse } from '@/lib/auth-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,10 +16,9 @@ export async function GET(request: Request) {
   try {
     // Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseServiceKey) {
       console.error('❌ Missing Supabase environment variables');
       return NextResponse.json({ 
         error: 'Database configuration error. Please check Supabase environment variables.',
@@ -26,41 +26,22 @@ export async function GET(request: Request) {
       }, { status: 500 });
     }
 
-    // ✅ JWT Authentication - Extract and validate Bearer token
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('❌ Missing or invalid Authorization header');
+    // ✅ JWT Authentication - Use standardized auth utility
+    const authResult = await validateAuthToken(request);
+    const { userId, error: authError } = extractUserId(authResult);
+
+    if (authError || !userId) {
+      console.error('❌ JWT validation failed:', authError);
       return NextResponse.json(
-        { error: 'Authentication required. Please provide a valid Bearer token.' },
+        createAuthErrorResponse(authError || 'Authentication required'),
         { status: 401 }
       );
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    if (!token) {
-      console.error('❌ Empty Bearer token');
-      return NextResponse.json(
-        { error: 'Authentication token is required' },
-        { status: 401 }
-      );
-    }
+    console.log(`✅ User authenticated for previous cartoons: ${userId}`);
 
-    // Initialize Supabase clients
-    const authSupabase = createClient(supabaseUrl, supabaseAnonKey);
+    // Initialize admin Supabase client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // ✅ Validate JWT token and get user
-    const { data: { user }, error: authError } = await authSupabase.auth.getUser(token);
-
-    if (authError || !user) {
-      console.error('❌ JWT validation failed:', authError?.message || 'Invalid token');
-      return NextResponse.json(
-        { error: 'Invalid or expired authentication token' },
-        { status: 401 }
-      );
-    }
-
-    console.log(`✅ User authenticated for previous cartoons: ${user.id}`);
 
     // Parse query parameters
     const url = new URL(request.url);
@@ -78,7 +59,7 @@ export async function GET(request: Request) {
       }, { status: 400 });
     }
 
-    console.log(`📚 Fetching previous cartoons for user ${user.id} - Limit: ${limit}, Offset: ${offset}, Style: ${styleFilter || 'all'}`);
+    console.log(`📚 Fetching previous cartoons for user ${userId} - Limit: ${limit}, Offset: ${offset}, Style: ${styleFilter || 'all'}`);
 
     try {
       // ✅ Build query with filters (using correct database schema field names)
@@ -95,7 +76,7 @@ export async function GET(request: Request) {
           cartoonized_cloudinary_public_id,
           created_at
         `)
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       // Apply style filter if provided (using correct database field name)
       if (styleFilter) {
@@ -119,7 +100,7 @@ export async function GET(request: Request) {
       let countQuery = adminSupabase
         .from('cartoon_images')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (styleFilter) {
         countQuery = countQuery.eq('cartoon_style', styleFilter);
@@ -171,7 +152,7 @@ export async function GET(request: Request) {
         return acc;
       }, {});
 
-      console.log(`✅ Fetched ${normalizedCartoons.length} cartoons for user ${user.id}`);
+      console.log(`✅ Fetched ${normalizedCartoons.length} cartoons for user ${userId}`);
 
       return NextResponse.json({
         success: true,

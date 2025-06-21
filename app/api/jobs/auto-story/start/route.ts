@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { validateAuthToken, extractUserId, createAuthErrorResponse } from '@/lib/auth-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +12,9 @@ export async function POST(request: Request) {
   try {
     // Validate environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseServiceKey) {
       console.error('❌ Missing Supabase environment variables');
       return NextResponse.json({ 
         error: 'Database configuration error. Please check Supabase environment variables.',
@@ -22,41 +22,22 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // ✅ JWT Authentication - Extract and validate Bearer token
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('❌ Missing or invalid Authorization header');
+    // ✅ JWT Authentication - Use standardized auth utility
+    const authResult = await validateAuthToken(request);
+    const { userId, error: authError } = extractUserId(authResult);
+
+    if (authError || !userId) {
+      console.error('❌ JWT validation failed:', authError);
       return NextResponse.json(
-        { error: 'Authentication required. Please provide a valid Bearer token.' },
+        createAuthErrorResponse(authError || 'Authentication required'),
         { status: 401 }
       );
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    if (!token) {
-      console.error('❌ Empty Bearer token');
-      return NextResponse.json(
-        { error: 'Authentication token is required' },
-        { status: 401 }
-      );
-    }
+    console.log(`✅ User authenticated for auto-story: ${userId}`);
 
-    // Initialize Supabase clients
-    const authSupabase = createClient(supabaseUrl, supabaseAnonKey);
+    // Initialize admin Supabase client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // ✅ Validate JWT token and get user
-    const { data: { user }, error: authError } = await authSupabase.auth.getUser(token);
-
-    if (authError || !user) {
-      console.error('❌ JWT validation failed:', authError?.message || 'Invalid token');
-      return NextResponse.json(
-        { error: 'Invalid or expired authentication token' },
-        { status: 401 }
-      );
-    }
-
-    console.log(`✅ User authenticated for auto-story: ${user.id}`);
 
     // Parse and validate input data with comic book enhancements
     const { 
@@ -105,7 +86,7 @@ export async function POST(request: Request) {
     const { count } = await adminSupabase
       .from('storybook_entries')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (count && count > 0) {
       return NextResponse.json(
@@ -118,14 +99,14 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    console.log(`🎨 Creating auto-story job ${jobId} for user ${user.id}`);
+    console.log(`🎨 Creating auto-story job ${jobId} for user ${userId}`);
 
     // ENHANCED: Create job entry with comic book layout context
     const { error: insertError } = await adminSupabase
       .from('auto_story_jobs')
       .insert({
         id: jobId,
-        user_id: user.id,
+        user_id: userId,
         status: 'pending',
         progress: 0,
         current_step: 'Initializing comic book auto-story generation',
@@ -153,7 +134,7 @@ export async function POST(request: Request) {
     const estimatedMinutes = 6; // Comic book layout generation takes slightly longer
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    console.log(`✅ Created comic book auto-story job: ${jobId} for user: ${user.id} (Style: ${characterArtStyle}, Layout: ${layoutType})`);
+    console.log(`✅ Created comic book auto-story job: ${jobId} for user: ${userId} (Style: ${characterArtStyle}, Layout: ${layoutType})`);
 
     return NextResponse.json({
       jobId,
