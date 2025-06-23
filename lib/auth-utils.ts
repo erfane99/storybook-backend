@@ -176,8 +176,31 @@ export function createAuthErrorResponse(error: string, status: number = 401) {
 }
 
 /**
+ * Gets allowed frontend origins from environment variables
+ * Industry best practice: Never hardcode URLs in source code
+ */
+function getAllowedOrigins(): string[] {
+  const corsOrigins = process.env.CORS_ORIGINS;
+  const frontendUrl = process.env.FRONTEND_URL;
+  
+  // Parse CORS_ORIGINS if available
+  if (corsOrigins) {
+    return corsOrigins.split(',').map(origin => origin.trim());
+  }
+  
+  // Fallback to FRONTEND_URL if CORS_ORIGINS not set
+  if (frontendUrl) {
+    return [frontendUrl, 'http://localhost:3000', 'http://localhost:3001'];
+  }
+  
+  // Development fallback
+  return ['http://localhost:3000', 'http://localhost:3001'];
+}
+
+/**
  * Utility to check if request is cross-origin based on headers
  * Helps determine whether to use JWT or cookie-based auth
+ * Now uses environment variables instead of hardcoded URLs
  */
 export function isCrossOriginRequest(request: Request): boolean {
   const origin = request.headers.get('origin');
@@ -188,12 +211,8 @@ export function isCrossOriginRequest(request: Request): boolean {
     return false;
   }
 
-  // Check if origin matches expected frontend domains
-  const allowedOrigins = [
-    'https://frontend-new-storybook.netlify.app',
-    'http://localhost:3000',
-    'http://localhost:3001'
-  ];
+  // Check if origin matches expected frontend domains from environment
+  const allowedOrigins = getAllowedOrigins();
 
   return !allowedOrigins.includes(origin);
 }
