@@ -5,6 +5,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { validateAuthToken, extractUserId, createAuthErrorResponse } from '@/lib/auth-utils';
+import { serviceContainer } from '@/lib/services/service-container';
+import type { SubscriptionService } from '@/lib/services/subscription-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,17 +84,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid character art style' }, { status: 400 });
     }
 
-    // ✅ Check if user has already created a storybook (using admin client with user filter)
-    const { count } = await adminSupabase
-      .from('storybook_entries')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-
-    if (count && count > 0) {
-      return NextResponse.json(
-        { error: "You've already created your free storybook. Upgrade to unlock more." },
-        { status: 403 }
-      );
+    // ✅ NEW: Use SubscriptionService instead of embedded business logic
+    try {
+      const subscriptionService = await serviceContainer.resolve<SubscriptionService>('SUBSCRIPTION');
+      const limitCheck = await subscriptionService.checkUserLimits(userId, 'auto-story');
+      
+      if (!limitCheck.allowed) {
+        console.log(`🚫 Auto-story creation blocked for user ${userId} - ${limitCheck.tier} tier limit reached (${limitCheck.currentUsage}/${limitCheck.limit})`);
+        
+        return NextResponse.json({
+          error: limitCheck.upgradeMessage || "You've reached your auto-story limit for your current plan.",
+          subscriptionInfo: {
+            tier: limitCheck.tier,
+            currentUsage: limitCheck.currentUsage,
+            limit: limitCheck.limit,
+            nextTier: limitCheck.nextTier
+          },
+          upgradeRequired: true
+        }, { status: 403 });
+      }
+      
+      console.log(`✅ Auto-story creation allowed for user ${userId} - ${limitCheck.tier} tier (${limitCheck.currentUsage}/${limitCheck.limit === -1 ? 'unlimited' : limitCheck.limit})`);
+    } catch (serviceError) {
+      console.error('❌ Subscription service error:', serviceError);
+      // Fail-safe: allow creation but log the error
+      console.warn('⚠️ Proceeding with auto-story creation due to subscription service error');
     }
 
     // Generate job ID
