@@ -1,6 +1,6 @@
 // Enhanced storybook API route: app/api/jobs/storybook/start/route.ts
 // PROJECT: Railway Backend
-// Replace entire file content with this enhanced version
+// FIXED: Proper data structure with input_data containing all job parameters
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -118,24 +118,26 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // ENHANCED: Create job entry with comic book layout context
+    // ✅ FIXED: Store all job parameters in input_data according to StorybookJobData type
     const { error: insertError } = await adminSupabase
       .from('storybook_jobs')
       .insert({
         id: jobId,
-        user_id: userId, // ✅ Now properly using validated user ID
+        user_id: userId,
         status: 'pending',
         progress: 0,
         current_step: 'Initializing comic book storybook generation',
-        title: title,
-        story: story,
-        character_image: characterImage,
-        character_description: characterDescription || '', // Store character description
-        pages: validatedPages, // Can be empty - worker will generate comic book pages with panels
-        audience: audience,
-        is_reused_image: isReusedImage,
-        character_art_style: characterArtStyle, // NEW: Store character art style
-        layout_type: layoutType, // NEW: Store layout type (always comic-book-panels)
+        input_data: {
+          title: title,
+          story: story,
+          characterImage: characterImage,
+          pages: validatedPages,
+          audience: audience,
+          isReusedImage: isReusedImage,
+          characterDescription: characterDescription || '',
+          characterArtStyle: characterArtStyle,
+          layoutType: layoutType
+        },
         created_at: now,
         updated_at: now,
         retry_count: 0,
