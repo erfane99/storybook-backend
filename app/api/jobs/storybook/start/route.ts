@@ -1,6 +1,6 @@
 // Enhanced storybook API route: app/api/jobs/storybook/start/route.ts
 // PROJECT: Railway Backend
-// FIXED: Proper data structure with input_data containing all job parameters
+// DATABASE-FIRST: Uses individual columns matching database schema
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // ✅ FIXED: Store all job parameters in input_data according to StorybookJobData type
+    // ✅ DATABASE-FIRST: Store in individual columns matching exact database schema
     const { error: insertError } = await adminSupabase
       .from('storybook_jobs')
       .insert({
@@ -127,21 +127,21 @@ export async function POST(request: Request) {
         status: 'pending',
         progress: 0,
         current_step: 'Initializing comic book storybook generation',
-        input_data: {
-          title: title,
-          story: story,
-          characterImage: characterImage,
-          pages: validatedPages,
-          audience: audience,
-          isReusedImage: isReusedImage,
-          characterDescription: characterDescription || '',
-          characterArtStyle: characterArtStyle,
-          layoutType: layoutType
-        },
+        // Individual columns matching database schema
+        title: title,
+        story: story,
+        character_image: characterImage,
+        pages: validatedPages,
+        audience: audience,
+        is_reused_image: isReusedImage || false,
+        character_description: characterDescription || '',
+        character_art_style: characterArtStyle,
+        layout_type: layoutType,
         created_at: now,
         updated_at: now,
         retry_count: 0,
-        max_retries: 3
+        max_retries: 3,
+        has_errors: false
       });
 
     if (insertError) {
