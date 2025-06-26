@@ -59,4 +59,3 @@ serviceContainer.register('SUBSCRIPTION', async () => {
 });
 
 export { serviceContainer };
-export type { ServiceType };
