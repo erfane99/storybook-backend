@@ -17,8 +17,13 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Parse and validate input data
-    const { story, characterImage, audience = 'children' } = await request.json();
+    // Parse and validate input data  
+    const { 
+      story, 
+      character_image,  // ✅ FIXED: Use database field name (snake_case)
+      audience = 'children',
+      character_description  // ✅ ADDED: Include optional field
+    } = await request.json();
 
     // Validation - same as current generate-scenes
     if (!story || story.trim().length < 50) {
@@ -52,7 +57,7 @@ export async function POST(request: Request) {
     // Use admin client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    // ✅ DATABASE-FIRST: Store in individual columns matching exact database schema
     const { error: insertError } = await adminSupabase
       .from('scene_generation_jobs')
       .insert({
@@ -61,9 +66,11 @@ export async function POST(request: Request) {
         status: 'pending',
         progress: 0,
         current_step: 'Initializing scene generation',
+        // Individual columns matching database schema
         story: story,
-        character_image: characterImage,
+        character_image: character_image,  // ✅ FIXED: Use correct field name
         audience: audience,
+        character_description: character_description,  // ✅ ADDED: Include optional field
         created_at: now,
         updated_at: now,
         retry_count: 0,
