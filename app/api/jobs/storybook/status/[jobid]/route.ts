@@ -68,6 +68,7 @@ export async function GET(
     if (job.started_at) {
       response.startedAt = job.started_at;
     }
+
     if (job.completed_at) {
       response.completedAt = job.completed_at;
     }
@@ -76,7 +77,7 @@ export async function GET(
     if (job.status === 'completed' && job.storybook_entry_id) {
       response.result = {
         storybook_id: job.storybook_entry_id,
-        pages: job.pages,
+        pages: job.processed_pages || job.pages, // ✅ FIXED: Read from processed_pages (generated results) with fallback to pages (input)
         has_errors: false
       };
       response.message = 'Storybook generation completed successfully';
@@ -97,7 +98,7 @@ export async function GET(
 
     // Set appropriate cache headers
     const headers: Record<string, string> = {};
-
+    
     // Cache completed/failed jobs for longer, active jobs for shorter time
     if (['completed', 'failed', 'cancelled'].includes(job.status)) {
       headers['Cache-Control'] = 'public, max-age=3600'; // 1 hour
@@ -109,6 +110,7 @@ export async function GET(
 
   } catch (error: unknown) {
     console.error('❌ Storybook status check error:', error);
+    
     return NextResponse.json(
       { 
         error: error instanceof Error ? error.message : 'Failed to get job status',
