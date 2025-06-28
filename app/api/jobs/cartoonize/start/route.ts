@@ -125,7 +125,7 @@ export async function POST(request: Request) {
     const jobId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    // ✅ DATABASE-FIRST: Store in individual columns matching exact database schema
     const { error: insertError } = await adminSupabase
       .from('cartoonize_jobs')
       .insert({
@@ -134,13 +134,15 @@ export async function POST(request: Request) {
         status: 'pending',
         progress: 0,
         current_step: 'Initializing image cartoonization',
-        original_image_data: prompt,
-        style: style,
-        original_cloudinary_url: imageUrl,
+        // Individual columns matching database schema
+        original_image_data: prompt,    // Database column for prompt
+        style: style,                   // Database column for style
+        original_cloudinary_url: imageUrl, // Database column for source image
         created_at: now,
         updated_at: now,
         retry_count: 0,
-        max_retries: 3
+        max_retries: 3,
+        has_errors: false
       });
 
     if (insertError) {
