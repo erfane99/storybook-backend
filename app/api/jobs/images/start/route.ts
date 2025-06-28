@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       character_description, 
       emotion, 
       audience, 
-      isReusedImage, 
+      is_reused_image,  // ✅ FIXED: Use database field name
       cartoon_image, 
       style = 'storybook' 
     } = await request.json();
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     // Use admin client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Create job entry in database using ADMIN CLIENT (bypasses RLS)
+    // ✅ DATABASE-FIRST: Store in individual columns matching exact database schema
     const { error: insertError } = await adminSupabase
       .from('image_generation_jobs')
       .insert({
@@ -77,11 +77,12 @@ export async function POST(request: Request) {
         status: 'pending',
         progress: 0,
         current_step: 'Initializing image generation',
+        // Individual columns matching database schema
         image_prompt: image_prompt,
         character_description: character_description,
         emotion: emotion,
         audience: audience,
-        is_reused_image: isReusedImage,
+        is_reused_image: is_reused_image,  // ✅ FIXED: Use correct field name
         cartoon_image: cartoon_image,
         style: style,
         created_at: now,
@@ -109,13 +110,13 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `/api/jobs/images/status/${jobId}`,
+      pollingUrl: `/api/jobs/image-generation/status/${jobId}`,
       message: 'Image generation job created. Processing will be handled by worker service.',
       imageInfo: {
         style,
         audience,
         emotion,
-        isReusedImage: !!isReusedImage,
+        isReusedImage: !!is_reused_image,
         promptLength: image_prompt.length
       }
     });
