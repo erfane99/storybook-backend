@@ -31,7 +31,7 @@ export class SubscriptionService {
    */
   private getSubscriptionTiers(): Record<string, SubscriptionTier> {
     return {
-      free: {
+      user: {
         name: 'Free',
         storybookLimit: 1,
         autoStoryLimit: 1,
@@ -43,7 +43,7 @@ export class SubscriptionService {
         autoStoryLimit: 10,
         features: ['10 Storybooks', '10 Auto-Stories', 'Priority Support', 'Advanced Styles']
       },
-      unlimited: {
+      admin: {
         name: 'Unlimited',
         storybookLimit: -1, // -1 means unlimited
         autoStoryLimit: -1,
@@ -53,28 +53,48 @@ export class SubscriptionService {
   }
 
   /**
-   * Get user's current subscription tier
+   * Get user's current subscription tier from profiles table
    */
   private async getUserTier(userId: string): Promise<string> {
     try {
-      // Check if user has a subscription record
-      const { data: subscription, error } = await this.supabaseClient
-        .from('user_subscriptions')
-        .select('tier, status, expires_at')
+      // Query profiles table for user_type which represents the subscription tier
+      const { data: profile, error } = await this.supabaseClient
+        .from('profiles')
+        .select('user_type, subscription_status')
         .eq('user_id', userId)
-        .eq('status', 'active')
-        .gt('expires_at', new Date().toISOString())
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        console.warn('Error fetching user subscription:', error);
-        return 'free';
+        console.warn('Error fetching user profile:', error);
+        return 'user'; // Default to free tier
       }
 
-      return subscription?.tier || 'free';
+      if (!profile) {
+        console.warn(`No profile found for user ${userId}, defaulting to free tier`);
+        return 'user'; // Default to free tier
+      }
+
+      // Check if subscription is active (if subscription_status exists)
+      if (profile.subscription_status && profile.subscription_status !== 'active') {
+        console.log(`User ${userId} has inactive subscription status: ${profile.subscription_status}, defaulting to free tier`);
+        return 'user'; // Default to free tier for inactive subscriptions
+      }
+
+      // Map user_type to subscription tier
+      // user_type values: 'user' (free), 'premium', 'admin' (unlimited)
+      const tier = profile.user_type || 'user';
+      
+      // Validate tier exists in our configuration
+      const validTiers = ['user', 'premium', 'admin'];
+      if (!validTiers.includes(tier)) {
+        console.warn(`Invalid user_type '${tier}' for user ${userId}, defaulting to free tier`);
+        return 'user';
+      }
+
+      return tier;
     } catch (error) {
       console.warn('Error in getUserTier:', error);
-      return 'free';
+      return 'user'; // Default to free tier on any error
     }
   }
 
@@ -125,7 +145,7 @@ export class SubscriptionService {
       ]);
 
       const tiers = this.getSubscriptionTiers();
-      const tier = tiers[userTier] || tiers.free;
+      const tier = tiers[userTier] || tiers.user; // Default to free tier
       
       const limit = resourceType === 'storybook' ? tier.storybookLimit : tier.autoStoryLimit;
       
@@ -136,11 +156,11 @@ export class SubscriptionService {
       let nextTier: string | undefined;
 
       if (!allowed) {
-        if (userTier === 'free') {
+        if (userTier === 'user') {
           nextTier = 'premium';
           upgradeMessage = `You've reached your ${tier.name} plan limit of ${limit} ${resourceType}${limit !== 1 ? 's' : ''}. Upgrade to Premium for ${tiers.premium.storybookLimit} ${resourceType}s and advanced features.`;
         } else if (userTier === 'premium') {
-          nextTier = 'unlimited';
+          nextTier = 'admin';
           upgradeMessage = `You've reached your ${tier.name} plan limit of ${limit} ${resourceType}${limit !== 1 ? 's' : ''}. Upgrade to Unlimited for unlimited ${resourceType}s and premium support.`;
         } else {
           upgradeMessage = `You've reached your plan limit. Please contact support for assistance.`;
@@ -163,7 +183,7 @@ export class SubscriptionService {
         allowed: true,
         currentUsage: 0,
         limit: 1,
-        tier: 'free',
+        tier: 'user',
         upgradeMessage: 'Unable to verify subscription limits. Please try again.'
       };
     }
@@ -181,7 +201,7 @@ export class SubscriptionService {
       ]);
 
       const tiers = this.getSubscriptionTiers();
-      const tier = tiers[userTier] || tiers.free;
+      const tier = tiers[userTier] || tiers.user;
 
       return {
         tier: userTier,
