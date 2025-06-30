@@ -157,7 +157,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `/api/jobs/auto-story/status/${jobId}`,
+      pollingUrl: `/api/jobs/${jobId}`, // ✅ FIXED: Use generic job status endpoint
       message: 'Comic book auto-story generation job created. Processing will be handled by worker service.',
       phases: [
         'Generating story content',

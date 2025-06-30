@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `/api/jobs/scenes/status/${jobId}`,
+      pollingUrl: `/api/jobs/${jobId}`, // ✅ FIXED: Use generic job status endpoint
       message: 'Scene generation job created. Processing will be handled by worker service.',
       storyInfo: {
         wordCount,

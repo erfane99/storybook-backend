@@ -164,7 +164,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `/api/jobs/cartoonize/status/${jobId}`,
+      pollingUrl: `/api/jobs/${jobId}`, // ✅ FIXED: Use generic job status endpoint
       message: 'Image cartoonization job created. Processing will be handled by worker service.',
       processingInfo: {
         style,

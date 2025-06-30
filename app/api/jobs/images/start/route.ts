@@ -110,7 +110,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `/api/jobs/image-generation/status/${jobId}`,
+      pollingUrl: `/api/jobs/${jobId}`, // ✅ FIXED: Use generic job status endpoint
       message: 'Image generation job created. Processing will be handled by worker service.',
       imageInfo: {
         style,
