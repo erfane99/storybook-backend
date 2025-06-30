@@ -43,12 +43,12 @@ interface JobResult {
   status: string;
   progress: number;
   currentStep: string | null;
-  currentPhase: string | null;
+  currentPhase: string | undefined;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;
   completedAt?: string;
-  estimatedTimeRemaining?: string;
+  estimatedTimeRemaining?: string | undefined;
   result?: any;
   error?: string;
   retryCount?: number;
