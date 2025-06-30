@@ -37,6 +37,7 @@ const JOB_TABLES = [
   }
 ] as const;
 
+// Complete interface with all properties used in the code
 interface JobResult {
   jobId: string;
   jobType: string;
@@ -56,6 +57,34 @@ interface JobResult {
   processingTimeSeconds?: number;
   message?: string;
   jobMetadata?: any;
+  // Job-specific properties used in switch statements
+  storybookUrl?: string;
+  processingInfo?: {
+    cached: boolean;
+    style: string;
+    hasOriginalData: boolean;
+    message: string;
+    canSavePermanently: boolean;
+  };
+  saveOptions?: {
+    available: boolean;
+    temporaryUrl: string;
+    suggestedStyle: string;
+    saveEndpoint: string;
+  };
+  sceneInfo?: {
+    totalPages: number;
+    totalScenes: number;
+    averageScenesPerPage: number;
+  };
+  generationInfo?: {
+    reused: boolean;
+    promptUsed: string;
+    style: string;
+  };
+  canRetry?: boolean;
+  nextRetryIn?: string;
+  retryHistory?: string;
 }
 
 /**
