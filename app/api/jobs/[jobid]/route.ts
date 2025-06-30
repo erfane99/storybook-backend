@@ -471,22 +471,21 @@ export async function GET(
       response.retryHistory = `Attempted ${foundJob.retry_count} time(s)`;
     }
 
-    // Set appropriate cache headers
-    const headers: Record<string, string> = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
-
+    // CORS headers removed - handled by next.config.js globally
+    // Set appropriate cache headers only
+    const cacheHeaders: Record<string, string> = {};
+    
     if (['completed', 'failed', 'cancelled'].includes(foundJob.status)) {
-      headers['Cache-Control'] = 'public, max-age=3600'; // Cache completed jobs for 1 hour
+      cacheHeaders['Cache-Control'] = 'public, max-age=3600'; // Cache completed jobs for 1 hour
     } else {
-      headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'; // Don't cache active jobs
+      cacheHeaders['Cache-Control'] = 'no-cache, no-store, must-revalidate'; // Don't cache active jobs
     }
 
     console.log(`✅ Returning ${jobType} job status for ${jobid}: ${foundJob.status} (${foundJob.progress}%)`);
 
-    return NextResponse.json(response, { headers });
+    return NextResponse.json(response, { 
+      headers: cacheHeaders // Only cache headers, CORS handled globally
+    });
 
   } catch (error: unknown) {
     console.error('❌ Generic job status check error:', error);
@@ -496,26 +495,17 @@ export async function GET(
         details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { 
-        status: 500,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        }
+        status: 500
+        // CORS headers removed - handled by next.config.js globally
       }
     );
   }
 }
 
-// Handle CORS preflight requests
+// Handle CORS preflight requests - simplified since CORS handled globally
 export async function OPTIONS() {
   return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Max-Age': '86400',
-    },
+    status: 200
+    // CORS headers removed - handled by next.config.js globally
   });
 }
