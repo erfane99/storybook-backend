@@ -65,14 +65,14 @@ function calculateEstimatedTimeRemaining(
   jobType: string,
   progress: number,
   status: string
-): string | null {
+): string | undefined {
   if (status !== 'processing' || progress >= 100) {
-    return null;
+    return undefined;
   }
 
   const jobConfig = JOB_TABLES.find(config => config.type === jobType);
   if (!jobConfig) {
-    return null;
+    return undefined;
   }
 
   const remainingProgress = 100 - progress;
@@ -89,9 +89,9 @@ function calculateEstimatedTimeRemaining(
 /**
  * Determine current processing phase based on job type and progress
  */
-function getCurrentPhase(jobType: string, progress: number): string | null {
+function getCurrentPhase(jobType: string, progress: number): string | undefined {
   if (progress >= 100) {
-    return null;
+    return undefined;
   }
 
   switch (jobType) {
