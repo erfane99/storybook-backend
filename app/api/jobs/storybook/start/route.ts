@@ -172,7 +172,7 @@ export async function POST(request: Request) {
       status: 'pending',
       estimatedCompletion: estimatedCompletion.toISOString(),
       estimatedMinutes,
-      pollingUrl: `/api/jobs/storybook/status/${jobId}`,
+      pollingUrl: `/api/jobs/${jobId}`, // ✅ FIXED: Use correct generic job status endpoint
       message: 'Comic book storybook generation job created. Processing will be handled by worker service.',
       mode: processingMode,
       characterArtStyle,
