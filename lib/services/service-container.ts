@@ -17,7 +17,7 @@ class ServiceContainerImpl implements ServiceContainer {
   private services = new Map<ServiceType, any>();
   private factories = new Map<ServiceType, () => Promise<any>>();
 
-  async resolve<T>(serviceType: ServiceType): Promise<T> {
+  async resolve<T>(serviceType: ServiceType | string): Promise<T> {
     // Return cached service if available
     if (this.services.has(serviceType)) {
       return this.services.get(serviceType);
