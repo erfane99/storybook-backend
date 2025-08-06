@@ -1,13 +1,22 @@
 import { NextResponse } from 'next/server';
-import { serviceContainer } from '@/lib/services/service-container';
-import type { IAIService } from '@/lib/services/interfaces/service-contracts';
-import type { ImageGenerationOptions, ImageGenerationResult } from '@/lib/services/interfaces/service-contracts';
+import { createClient } from '@supabase/supabase-js';
 
-export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables');
+      return NextResponse.json({ 
+        error: 'Database configuration error. Please check Supabase environment variables.',
+        configurationError: true
+      }, { status: 500 });
+    }
+
     const {
       image_prompt,
       character_description,
@@ -17,7 +26,6 @@ export async function POST(request: Request) {
       cartoon_image,
       user_id,
       style = 'storybook',
-      // New optional parameters for enhanced generation
       characterArtStyle,
       layoutType,
       panelType
@@ -31,10 +39,46 @@ export async function POST(request: Request) {
       );
     }
 
-    const useMock = process.env.USE_MOCK === 'true';
+    // Validate emotion
+    const validEmotions = ['happy', 'sad', 'excited', 'scared', 'angry', 'surprised', 'curious', 'confused', 'determined'];
+    if (!validEmotions.includes(emotion)) {
+      return NextResponse.json(
+        { error: 'Invalid emotion. Must be one of: ' + validEmotions.join(', ') },
+        { status: 400 }
+      );
+    }
 
-    // Optional cache operations - completely isolated to prevent failures
-    if (user_id && cartoon_image && !useMock) {
+    // Validate audience
+    const validAudiences = ['children', 'young_adults', 'adults'];
+    if (!validAudiences.includes(audience)) {
+      return NextResponse.json(
+        { error: 'Invalid audience. Must be one of: ' + validAudiences.join(', ') },
+        { status: 400 }
+      );
+    }
+
+    // Validate style
+    const validStyles = ['storybook', 'semi-realistic', 'comic-book', 'flat-illustration', 'anime'];
+    if (!validStyles.includes(style)) {
+      return NextResponse.json(
+        { error: 'Invalid style. Must be one of: ' + validStyles.join(', ') },
+        { status: 400 }
+      );
+    }
+
+    // Check for mock mode
+    const useMock = process.env.USE_MOCK === 'true';
+    if (useMock) {
+      return NextResponse.json({
+        url: 'https://placekitten.com/1024/1024',
+        prompt_used: image_prompt,
+        mock: true,
+        reused: false
+      });
+    }
+
+    // Optional cache check for existing images
+    if (user_id && cartoon_image) {
       try {
         const { getCachedCartoonImage } = await import('@/lib/supabase/cache-utils');
         const cachedUrl = await getCachedCartoonImage(cartoon_image, style, user_id);
@@ -48,143 +92,93 @@ export async function POST(request: Request) {
           });
         }
       } catch (cacheError) {
-        console.warn('⚠️ Cache lookup failed, continuing with generation:', cacheError);
+        console.warn('⚠️ Cache lookup failed, continuing with job creation:', cacheError);
       }
     }
 
-    if (useMock) {
-      return NextResponse.json({
-        url: 'https://placekitten.com/1024/1024',
-        prompt_used: image_prompt,
-        mock: true,
-        reused: false
-      });
-    }
+    // Generate job ID
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
 
-    console.log('🎨 Generating professional comic panel with modular AI service...');
-    console.log(`🎭 Emotion: ${emotion}`);
-    console.log(`👥 Audience: ${audience}`);
-    console.log(`🎨 Style: ${style}`);
-    console.log(`♻️ Reused character: ${isReusedImage}`);
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get AI service from container
-    let aiService: IAIService;
-    try {
-      aiService = serviceContainer.resolve<IAIService>('IAIService');
-      console.log('✅ AI service resolved from container');
-    } catch (error) {
-      console.error('❌ Failed to resolve AI service:', error);
+    console.log(`🎨 Creating image generation job: ${jobId}`);
+
+    // Create job entry in image_generation_jobs table
+    const { data: job, error: insertError } = await adminSupabase
+      .from('image_generation_jobs')
+      .insert({
+        id: jobId,
+        user_id: user_id,
+        status: 'pending',
+        progress: 0,
+        current_step: 'Initializing image generation',
+        image_prompt: image_prompt,
+        character_description: character_description,
+        emotion: emotion,
+        audience: audience,
+        is_reused_image: isReusedImage || false,
+        cartoon_image: cartoon_image,
+        style: style,
+        character_art_style: characterArtStyle || style,
+        layout_type: layoutType || 'comic-book-panels',
+        panel_type: panelType || 'standard',
+        created_at: now,
+        updated_at: now,
+        retry_count: 0,
+        max_retries: 3,
+        has_errors: false
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('❌ Failed to create image generation job:', insertError);
       return NextResponse.json(
-        { 
-          error: 'AI service not available. Please check service configuration.',
-          configurationError: true
-        },
+        { error: 'Failed to create image generation job' },
         { status: 500 }
       );
     }
 
-    // Prepare options for the modular image generation
-    const imageGenerationOptions: ImageGenerationOptions = {
-      image_prompt: image_prompt.trim(),
-      character_description: character_description.trim(),
-      emotion: emotion as 'happy' | 'sad' | 'excited' | 'scared' | 'angry' | 'surprised' | 'curious' | 'confused' | 'determined',
-      audience: audience as 'children' | 'young adults' | 'adults',
-      isReusedImage: isReusedImage || false,
-      cartoon_image: cartoon_image || undefined,
-      style: style,
-      characterArtStyle: characterArtStyle || style || 'storybook',
-      layoutType: layoutType || 'comic-book-panels',
-      panelType: panelType || 'standard'
-    };
+    // Calculate estimated completion time
+    const estimatedMinutes = 2; // Image generation typically takes 1-3 minutes
+    const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    console.log('🚀 Calling enhanced image generation with character consistency...');
+    console.log(`✅ Created image generation job: ${jobId}`);
 
-    // Use the modular AI service with all its advanced features:
-    // - Character DNA consistency (95%+ accuracy)
-    // - Professional panel composition
-    // - Speech bubble intelligence (if dialogue)
-    // - Environmental consistency
-    // - Quality enforcement layers
-    // - Intelligent prompt compression
-    const imageResult: ImageGenerationResult = await aiService.generateSceneImage(imageGenerationOptions);
-
-    console.log('✅ Image generation complete with enhanced AI service');
-    console.log(`🎯 Character consistency applied: ${!imageResult.reused}`);
-    console.log(`📊 Prompt compression applied: ${imageResult.compressionApplied || false}`);
-
-    // Optional cache save for new generations
-    if (user_id && cartoon_image && !useMock && !imageResult.reused && imageResult.url) {
-      try {
-        const { saveCartoonImageToCache } = await import('@/lib/supabase/cache-utils');
-        await saveCartoonImageToCache(cartoon_image, imageResult.url, style, user_id);
-        console.log('💾 Saved to cache for future use');
-      } catch (cacheError) {
-        console.warn('⚠️ Failed to save to cache (non-critical):', cacheError);
-      }
-    }
-
-    // Return the enhanced result
     return NextResponse.json({
-      url: imageResult.url,
-      prompt_used: imageResult.prompt_used,
-      reused: imageResult.reused,
-      // Additional metadata from the enhanced system
-      metadata: {
-        compressionApplied: imageResult.compressionApplied || false,
-        characterConsistency: !imageResult.reused, // New images use character DNA
-        professionalStandards: true,
-        panelType: panelType || 'standard',
-        emotion: emotion,
-        audience: audience,
-        style: style
+      jobId,
+      status: 'pending',
+      estimatedCompletion: estimatedCompletion.toISOString(),
+      estimatedMinutes,
+      pollingUrl: `/api/jobs/${jobId}`,
+      message: 'Image generation job created. Processing will be handled by worker service.',
+      imageInfo: {
+        style,
+        emotion,
+        audience,
+        isReusedImage: !!isReusedImage,
+        promptLength: image_prompt.length,
+        panelType: panelType || 'standard'
       }
     });
 
-  } catch (error: any) {
-    console.error('❌ Generate cartoon image error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-
-    // Check for specific error types from the modular system
-    if (error.name === 'AIContentPolicyError') {
-      return NextResponse.json(
-        { 
-          error: 'Content policy violation detected. Please modify your image prompt.',
-          details: error.message
-        },
-        { status: 400 }
-      );
-    }
-
-    if (error.name === 'AIRateLimitError') {
-      return NextResponse.json(
-        { 
-          error: 'AI service rate limit exceeded. Please try again later.',
-          retryAfter: error.retryAfter || 60
-        },
-        { status: 429 }
-      );
-    }
-
-    if (error.message?.includes('Prompt too long')) {
-      return NextResponse.json(
-        { 
-          error: 'Image prompt is too complex. The system will automatically compress it.',
-          details: 'This should not happen with the modular system'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Generic error response
+  } catch (error: unknown) {
+    console.error('❌ Image generation job creation error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to generate image',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to create image generation job',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );
   }
+}
+
+// Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+  });
 }

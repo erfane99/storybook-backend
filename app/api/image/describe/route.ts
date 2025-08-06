@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server';
-import { serviceContainer } from '@/lib/services/service-container';
-import type { IAIService } from '@/lib/services/interfaces/service-contracts';
-import type { CharacterDescriptionOptions, CharacterDescriptionResult } from '@/lib/services/interfaces/service-contracts';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { imageUrl } = await request.json();
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables');
+      return NextResponse.json({ 
+        error: 'Database configuration error. Please check Supabase environment variables.',
+        configurationError: true
+      }, { status: 500 });
+    }
+
+    const { imageUrl, analysisType = 'basic', includePersonality = false, includeClothing = true, includeBackground = false } = await request.json();
 
     // Validation
     if (!imageUrl || typeof imageUrl !== 'string') {
@@ -27,122 +37,111 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('🔍 Analyzing character image with modular AI service...');
-    console.log(`🖼️ Image URL: ${imageUrl.substring(0, 100)}...`);
-
-    // Get AI service from container
-    let aiService: IAIService;
-    try {
-      aiService = serviceContainer.resolve<IAIService>('IAIService');
-      console.log('✅ AI service resolved from container');
-    } catch (error) {
-      console.error('❌ Failed to resolve AI service:', error);
+    // Validate analysis type
+    const validAnalysisTypes = ['basic', 'detailed', 'story-focused'];
+    if (!validAnalysisTypes.includes(analysisType)) {
       return NextResponse.json(
-        { 
-          error: 'AI service not available. Please check service configuration.',
-          configurationError: true
-        },
+        { error: 'Invalid analysis type. Must be one of: ' + validAnalysisTypes.join(', ') },
+        { status: 400 }
+      );
+    }
+
+    // Optional user authentication (character description can work anonymously)
+    let userId: string | undefined;
+    try {
+      const authHeader = request.headers.get('authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        const { validateAuthToken, extractUserId } = await import('@/lib/auth-utils');
+        const authResult = await validateAuthToken(request);
+        const { userId: validatedUserId } = extractUserId(authResult);
+        userId = validatedUserId || undefined;
+      }
+    } catch (authError) {
+      // Continue without user ID - character description can work anonymously
+      console.log('Authentication optional for character description, proceeding anonymously');
+    }
+
+    // Generate job ID
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    console.log(`🔍 Creating character description job: ${jobId}`);
+
+    // Create job entry in character_description_jobs table
+    // Note: This table may need to be created if it doesn't exist
+    const { data: job, error: insertError } = await adminSupabase
+      .from('character_description_jobs')
+      .insert({
+        id: jobId,
+        user_id: userId,
+        status: 'pending',
+        progress: 0,
+        current_step: 'Initializing character analysis',
+        image_url: imageUrl,
+        analysis_type: analysisType,
+        include_personality: includePersonality,
+        include_clothing: includeClothing,
+        include_background: includeBackground,
+        created_at: now,
+        updated_at: now,
+        retry_count: 0,
+        max_retries: 3,
+        has_errors: false
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('❌ Failed to create character description job:', insertError);
+      
+      // If table doesn't exist, provide helpful error message
+      if (insertError.code === '42P01') {
+        return NextResponse.json(
+          { 
+            error: 'Character description service not available. Database table missing.',
+            configurationError: true
+          },
+          { status: 500 }
+        );
+      }
+      
+      return NextResponse.json(
+        { error: 'Failed to create character description job' },
         { status: 500 }
       );
     }
 
-    // Prepare options for character description
-    const descriptionOptions: CharacterDescriptionOptions = {
-      imageUrl: imageUrl,
-      includeVisualDNA: true,      // Generate comprehensive visual DNA
-      includePersonality: false,   // Keep it focused on visual aspects
-      includeClothing: true,       // Important for consistency
-      includeBackground: false,    // Exclude background elements
-      generateFingerprint: true    // Create compressed fingerprint for efficiency
-    };
+    // Calculate estimated completion time
+    const estimatedMinutes = 1; // Character description typically takes 30-90 seconds
+    const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
-    console.log('🚀 Generating character DNA with visual fingerprinting...');
+    console.log(`✅ Created character description job: ${jobId}`);
 
-    // Use the modular AI service with advanced features:
-    // - Visual DNA extraction for 95%+ consistency
-    // - Character fingerprinting for efficient reuse
-    // - Professional character analysis
-    // - Structured data extraction
-    const descriptionResult: CharacterDescriptionResult = await aiService.generateCharacterDescription(descriptionOptions);
-
-    console.log('✅ Character analysis complete with visual DNA');
-    console.log(`🧬 Visual DNA created: ${descriptionResult.visualDNA ? 'Yes' : 'No'}`);
-    console.log(`🔍 Fingerprint generated: ${descriptionResult.fingerprint ? 'Yes' : 'No'}`);
-    console.log(`📝 Description length: ${descriptionResult.description.length} characters`);
-
-    // Check cache for future optimization (optional)
-    let cached = false;
-    if (descriptionResult.fingerprint) {
-      // In the future, we could cache this fingerprint for instant retrieval
-      // For now, we'll just mark it as not cached
-      cached = false;
-    }
-
-    // Return enhanced result
     return NextResponse.json({
-      cached: cached,
-      characterDescription: descriptionResult.description,
-      // Enhanced metadata from the modular system
-      metadata: {
-        hasVisualDNA: !!descriptionResult.visualDNA,
-        hasFingerprint: !!descriptionResult.fingerprint,
-        wordCount: descriptionResult.description.split(' ').length,
-        // Visual DNA details (if available)
-        visualDNA: descriptionResult.visualDNA ? {
-          facialFeatures: descriptionResult.visualDNA.facialFeatures || [],
-          bodyType: descriptionResult.visualDNA.bodyType || 'standard',
-          clothing: descriptionResult.visualDNA.clothing || 'casual',
-          colorPalette: descriptionResult.visualDNA.colorPalette || [],
-          distinctiveFeatures: descriptionResult.visualDNA.distinctiveFeatures || []
-        } : undefined,
-        // Compressed fingerprint for efficient reuse
-        fingerprint: descriptionResult.fingerprint,
-        processedAt: new Date().toISOString()
+      jobId,
+      status: 'pending',
+      estimatedCompletion: estimatedCompletion.toISOString(),
+      estimatedMinutes,
+      pollingUrl: `/api/jobs/${jobId}`,
+      message: 'Character description job created. Processing will be handled by worker service.',
+      analysisInfo: {
+        analysisType,
+        includePersonality,
+        includeClothing,
+        includeBackground,
+        imageUrl: imageUrl.substring(0, 100) + '...' // Truncated for security
       }
     });
 
-  } catch (error: any) {
-    console.error('❌ Image describe error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-
-    // Check for specific error types
-    if (error.name === 'AIRateLimitError') {
-      return NextResponse.json(
-        { 
-          error: 'AI service rate limit exceeded. Please try again later.',
-          retryAfter: error.retryAfter || 60
-        },
-        { status: 429 }
-      );
-    }
-
-    if (error.name === 'AIContentPolicyError') {
-      return NextResponse.json(
-        { 
-          error: 'Image content policy violation detected.',
-          details: error.message
-        },
-        { status: 400 }
-      );
-    }
-
-    if (error.message?.includes('Invalid image')) {
-      return NextResponse.json(
-        { 
-          error: 'Invalid or inaccessible image URL. Please ensure the image is publicly accessible.',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Generic error response
+  } catch (error: unknown) {
+    console.error('❌ Character description job creation error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to describe image',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to create character description job',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );

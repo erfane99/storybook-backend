@@ -1,14 +1,31 @@
 import { NextResponse } from 'next/server';
-import { serviceContainer } from '@/lib/services/service-container';
-import type { IAIService } from '@/lib/services/interfaces/service-contracts';
-import type { SceneGenerationOptions, SceneGenerationResult } from '@/lib/services/interfaces/service-contracts';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables');
+      return NextResponse.json({ 
+        error: 'Database configuration error. Please check Supabase environment variables.',
+        configurationError: true
+      }, { status: 500 });
+    }
+
     // Parse request body
-    const { story, characterImage, audience = 'children' } = await request.json();
+    const { 
+      story, 
+      characterImage, 
+      audience = 'children',
+      characterDescription,
+      characterArtStyle = 'storybook',
+      layoutType = 'comic-book-panels'
+    } = await request.json();
 
     // Validation
     if (!story || story.trim().length < 50) {
@@ -18,128 +35,128 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('🎨 Generating professional comic book scenes with modular AI service...');
-    console.log(`📖 Story length: ${story.length} characters`);
-    console.log(`👥 Audience: ${audience}`);
-    console.log(`🖼️ Has character image: ${!!characterImage}`);
-
-    // Get AI service from container - this gives us access to all the enhanced prompts
-    let aiService: IAIService;
-    try {
-      aiService = serviceContainer.resolve<IAIService>('IAIService');
-      console.log('✅ AI service resolved from container');
-    } catch (error) {
-      console.error('❌ Failed to resolve AI service:', error);
+    // Validate audience
+    const validAudiences = ['children', 'young_adults', 'adults'];
+    if (!validAudiences.includes(audience)) {
       return NextResponse.json(
-        { 
-          error: 'AI service not available. Please check service configuration.',
-          configurationError: true
-        },
-        { status: 500 }
-      );
-    }
-
-    // Prepare options for the modular scene generation
-    const sceneGenerationOptions: SceneGenerationOptions = {
-      story: story.trim(),
-      audience: audience as 'children' | 'young adults' | 'adults',
-      characterImage: characterImage || undefined,
-      characterArtStyle: 'storybook', // Default art style
-      layoutType: 'comic-book-panels' // Professional comic layout
-    };
-
-    console.log('🚀 Calling enhanced scene generation with narrative intelligence...');
-
-    // Use the modular AI service with all its advanced features:
-    // - Narrative intelligence for story archetype detection
-    // - Professional comic book pacing
-    // - Emotional progression mapping
-    // - Speech bubble intelligence
-    // - Panel type optimization
-    // - Visual priority system
-    const sceneResult: SceneGenerationResult = await aiService.generateScenesWithAudience(sceneGenerationOptions);
-
-    console.log('✅ Scene generation complete with enhanced AI service');
-    console.log(`📊 Generated ${sceneResult.pages.length} pages with professional comic layout`);
-    console.log(`🎯 Story archetype detected: ${sceneResult.metadata?.narrativeIntelligenceApplied ? 'Yes' : 'No'}`);
-    console.log(`🎨 Character consistency: ${sceneResult.metadata?.characterConsistencyEnabled ? 'Enabled' : 'Disabled'}`);
-    console.log(`🌍 Environmental consistency: ${sceneResult.metadata?.environmentalConsistencyEnabled ? 'Enabled' : 'Disabled'}`);
-
-    // Return the enhanced result
-    return NextResponse.json({
-      pages: sceneResult.pages,
-      metadata: {
-        audience: sceneResult.audience,
-        totalScenes: sceneResult.pages.reduce((total, page) => total + page.scenes.length, 0),
-        characterImageUsed: !!sceneResult.characterImage,
-        layoutType: sceneResult.layoutType,
-        characterArtStyle: sceneResult.characterArtStyle,
-        // Enhanced metadata from modular system
-        narrativeIntelligence: sceneResult.metadata?.narrativeIntelligenceApplied || false,
-        characterConsistency: sceneResult.metadata?.characterConsistencyEnabled || false,
-        environmentalConsistency: sceneResult.metadata?.environmentalConsistencyEnabled || false,
-        professionalStandards: sceneResult.metadata?.professionalStandards || false,
-        qualityScore: sceneResult.metadata?.qualityScore || 0,
-        storyBeats: sceneResult.metadata?.storyBeats || 0,
-        dialoguePanels: sceneResult.metadata?.dialoguePanels || 0,
-        speechBubbleDistribution: sceneResult.metadata?.speechBubbleDistribution || {},
-        promptOptimization: sceneResult.metadata?.promptOptimization || 'standard'
-      }
-    });
-
-  } catch (error: any) {
-    console.error('❌ Scene generation error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-
-    // Check for specific error types from the modular system
-    if (error.name === 'AIAuthenticationError') {
-      return NextResponse.json(
-        { 
-          error: 'AI service authentication failed. Please check API key configuration.',
-          configurationError: true
-        },
-        { status: 500 }
-      );
-    }
-
-    if (error.name === 'AIRateLimitError') {
-      return NextResponse.json(
-        { 
-          error: 'AI service rate limit exceeded. Please try again later.',
-          retryAfter: error.retryAfter || 60
-        },
-        { status: 429 }
-      );
-    }
-
-    if (error.name === 'AIContentPolicyError') {
-      return NextResponse.json(
-        { 
-          error: 'Content policy violation detected. Please modify your story.',
-          details: error.message
-        },
+        { error: 'Invalid audience. Must be one of: ' + validAudiences.join(', ') },
         { status: 400 }
       );
     }
 
-    // Generic error response
+    // Validate character art style
+    const validStyles = ['storybook', 'semi-realistic', 'comic-book', 'flat-illustration', 'anime'];
+    if (!validStyles.includes(characterArtStyle)) {
+      return NextResponse.json(
+        { error: 'Invalid character art style. Must be one of: ' + validStyles.join(', ') },
+        { status: 400 }
+      );
+    }
+
+    // Validate layout type
+    const validLayouts = ['comic-book-panels', 'storybook-pages', 'single-panel'];
+    if (!validLayouts.includes(layoutType)) {
+      return NextResponse.json(
+        { error: 'Invalid layout type. Must be one of: ' + validLayouts.join(', ') },
+        { status: 400 }
+      );
+    }
+
+    // Optional user authentication (scene generation can work anonymously)
+    let userId: string | undefined;
+    try {
+      const authHeader = request.headers.get('authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        const { validateAuthToken, extractUserId } = await import('@/lib/auth-utils');
+        const authResult = await validateAuthToken(request);
+        const { userId: validatedUserId } = extractUserId(authResult);
+        userId = validatedUserId || undefined;
+      }
+    } catch (authError) {
+      // Continue without user ID - scene generation can work anonymously
+      console.log('Authentication optional for scene generation, proceeding anonymously');
+    }
+
+    // Generate job ID
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    console.log(`🎨 Creating scene generation job: ${jobId}`);
+
+    // Create job entry in scene_generation_jobs table
+    const { data: job, error: insertError } = await adminSupabase
+      .from('scene_generation_jobs')
+      .insert({
+        id: jobId,
+        user_id: userId,
+        status: 'pending',
+        progress: 0,
+        current_step: 'Initializing scene generation',
+        story: story,
+        character_image: characterImage,
+        audience: audience,
+        character_description: characterDescription,
+        character_art_style: characterArtStyle,
+        layout_type: layoutType,
+        created_at: now,
+        updated_at: now,
+        retry_count: 0,
+        max_retries: 3,
+        has_errors: false
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('❌ Failed to create scene generation job:', insertError);
+      return NextResponse.json(
+        { error: 'Failed to create scene generation job' },
+        { status: 500 }
+      );
+    }
+
+    // Calculate estimated completion time based on story length and audience
+    const wordCount = story.trim().split(/\s+/).length;
+    const baseMinutes = audience === 'children' ? 2 : audience === 'young_adults' ? 3 : 4;
+    const estimatedMinutes = Math.max(1, baseMinutes + Math.floor(wordCount / 200));
+    const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
+
+    console.log(`✅ Created scene generation job: ${jobId}`);
+
+    return NextResponse.json({
+      jobId,
+      status: 'pending',
+      estimatedCompletion: estimatedCompletion.toISOString(),
+      estimatedMinutes,
+      pollingUrl: `/api/jobs/${jobId}`,
+      message: 'Scene generation job created. Processing will be handled by worker service.',
+      storyInfo: {
+        wordCount,
+        audience,
+        characterArtStyle,
+        layoutType,
+        estimatedScenes: audience === 'children' ? '5-8' : audience === 'young_adults' ? '8-12' : '10-15'
+      }
+    });
+
+  } catch (error: unknown) {
+    console.error('❌ Scene generation job creation error:', error);
     return NextResponse.json(
       { 
-        error: error.message || 'Failed to generate scenes',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        error: error instanceof Error ? error.message : 'Failed to create scene generation job',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
       },
       { status: 500 }
     );
   }
 }
 
-// Note: The describeCharacter function is no longer needed as character description
-// is now handled by the modular AI service with advanced Visual DNA creation.
-// The AI service will:
-// 1. Create comprehensive character DNA if an image is provided
-// 2. Use visual fingerprinting for consistency
-// 3. Apply narrative intelligence to understand the character's role
-// 4. Ensure 95%+ character consistency across all panels
+// Handle CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+  });
+}
