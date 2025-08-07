@@ -9,13 +9,13 @@ import { SubscriptionService } from './subscription-service';
 export type ServiceType = 'SUBSCRIPTION';
 
 export interface ServiceContainer {
-  resolve<T>(serviceType: ServiceType): Promise<T>;
-  register<T>(serviceType: ServiceType, factory: () => Promise<T>): void;
+  resolve<T>(serviceType: ServiceType | string): Promise<T>;
+  register<T>(serviceType: ServiceType | string, factory: () => Promise<T>): void;
 }
 
 class ServiceContainerImpl implements ServiceContainer {
-  private services = new Map<ServiceType, any>();
-  private factories = new Map<ServiceType, () => Promise<any>>();
+  private services = new Map<ServiceType | string, any>();
+  private factories = new Map<ServiceType | string, () => Promise<any>>();
 
   async resolve<T>(serviceType: ServiceType | string): Promise<T> {
     // Return cached service if available
@@ -34,7 +34,7 @@ class ServiceContainerImpl implements ServiceContainer {
     return service;
   }
 
-  register<T>(serviceType: ServiceType, factory: () => Promise<T>): void {
+  register<T>(serviceType: ServiceType | string, factory: () => Promise<T>): void {
     this.factories.set(serviceType, factory);
   }
 }
