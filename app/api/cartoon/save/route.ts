@@ -77,7 +77,8 @@ export async function POST(request: Request) {
       originalImageUrl: !!originalImageUrl,
       cartoonImageUrl: !!cartoonImageUrl,
       artStyle,
-      characterDescription: !!characterDescription
+      characterDescription: !!characterDescription,
+      descriptionLength: characterDescription?.length || 0
     });
 
     // Input validation
@@ -94,6 +95,19 @@ export async function POST(request: Request) {
     if (!artStyle?.trim()) {
       console.error('❌ Missing artStyle');
       return NextResponse.json({ error: 'Art style is required' }, { status: 400 });
+    }
+
+    // ✅ FIX: Add character description validation for quality
+    if (!characterDescription || characterDescription.trim().length < 20) {
+      console.error('❌ Character description missing or too short:', characterDescription?.length || 0);
+      return NextResponse.json({ 
+        error: 'Character description is required and must be at least 20 characters for quality storybooks',
+        details: {
+          provided: !!characterDescription,
+          length: characterDescription?.length || 0,
+          minimumRequired: 20
+        }
+      }, { status: 400 });
     }
 
     // Validate art style
