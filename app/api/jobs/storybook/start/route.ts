@@ -54,22 +54,119 @@ export async function POST(request: Request) {
       layoutType = 'comic-book-panels'
     } = await request.json();
 
-    // Enhanced validation with better error messages
+    // ✅ FIX: Comprehensive quality validation gates
+    const validationErrors: string[] = [];
+    
+    // Title validation
     if (!title?.trim()) {
-      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
+      validationErrors.push('Title is required');
+    } else if (title.trim().length < 2) {
+      validationErrors.push('Title must be at least 2 characters');
+    } else if (title.trim().length > 100) {
+      validationErrors.push('Title must be less than 100 characters');
     }
     
+    // Story validation
     if (!story?.trim()) {
-      return NextResponse.json({ error: 'Story content is required' }, { status: 400 });
+      validationErrors.push('Story content is required');
+    } else if (story.trim().length < 50) {
+      validationErrors.push('Story must be at least 50 characters for quality comic generation');
+    } else if (story.trim().length > 10000) {
+      validationErrors.push('Story must be less than 10,000 characters');
     }
     
+    // Character image validation
     if (!characterImage) {
-      return NextResponse.json({ error: 'Character image is required' }, { status: 400 });
+      validationErrors.push('Character image is required');
+    } else {
+      try {
+        new URL(characterImage);
+      } catch {
+        validationErrors.push('Character image must be a valid URL');
+      }
     }
     
-    if (!['children', 'young_adults', 'adults'].includes(audience)) {
-      return NextResponse.json({ error: 'Invalid audience type' }, { status: 400 });
+    // ✅ NEW: Character description validation for quality
+    const MIN_DESCRIPTION_LENGTH = 20;
+    const QUALITY_DESCRIPTION_LENGTH = 50;
+    
+    if (isReusedImage && (!characterDescription || characterDescription.trim().length < MIN_DESCRIPTION_LENGTH)) {
+      validationErrors.push(`Character description must be at least ${MIN_DESCRIPTION_LENGTH} characters for reused images`);
     }
+    
+    // Log quality warning (don't block)
+    if (characterDescription && characterDescription.trim().length > 0 && characterDescription.trim().length < QUALITY_DESCRIPTION_LENGTH) {
+      console.warn(`⚠️ Character description is short (${characterDescription.length} chars). Recommended: ${QUALITY_DESCRIPTION_LENGTH}+ for best quality.`);
+    }
+    
+    // Audience validation
+    if (!audience) {
+      validationErrors.push('Audience selection is required');
+    } else if (!['children', 'young_adults', 'adults'].includes(audience)) {
+      validationErrors.push('Invalid audience type. Must be: children, young_adults, or adults');
+    }
+    
+    // Character art style validation
+    const validStyles = ['storybook', 'semi-realistic', 'comic-book', 'flat-illustration', 'anime'];
+    if (!validStyles.includes(characterArtStyle)) {
+      validationErrors.push(`Invalid character art style. Must be one of: ${validStyles.join(', ')}`);
+    }
+    
+    // Layout type validation
+    const validLayouts = ['comic-book-panels', 'storybook-pages', 'single-panel'];
+    if (!validLayouts.includes(layoutType)) {
+      validationErrors.push(`Invalid layout type. Must be one of: ${validLayouts.join(', ')}`);
+    }
+    
+    // Pages validation if provided
+    if (pages && pages.length > 0) {
+      if (!Array.isArray(pages)) {
+        validationErrors.push('Pages must be an array');
+      } else if (pages.length > 20) {
+        validationErrors.push('Maximum 20 pages allowed per storybook');
+      } else {
+        // Validate each page structure
+        pages.forEach((page, index) => {
+          if (!page.pageNumber || typeof page.pageNumber !== 'number') {
+            validationErrors.push(`Page ${index + 1}: Missing or invalid pageNumber`);
+          }
+          if (!page.scenes || !Array.isArray(page.scenes)) {
+            validationErrors.push(`Page ${index + 1}: Scenes must be an array`);
+          } else if (page.scenes.length === 0) {
+            validationErrors.push(`Page ${index + 1}: At least one scene required per page`);
+          } else if (page.scenes.length > 6) {
+            validationErrors.push(`Page ${index + 1}: Maximum 6 scenes allowed per page`);
+          }
+        });
+      }
+    }
+    
+    // Return all validation errors at once for better UX
+    if (validationErrors.length > 0) {
+      console.error('❌ Validation failed:', validationErrors);
+      return NextResponse.json({ 
+        error: 'Validation failed',
+        details: validationErrors,
+        fields: {
+          title: title?.length || 0,
+          story: story?.length || 0,
+          characterDescription: characterDescription?.length || 0,
+          pages: pages?.length || 0
+        }
+      }, { status: 400 });
+    }
+    
+    // Quality metrics logging
+    console.log('✅ Quality validation passed:', {
+      titleLength: title.trim().length,
+      storyLength: story.trim().length,
+      characterDescriptionLength: characterDescription?.length || 0,
+      pageCount: pages?.length || 0,
+      audience,
+      characterArtStyle,
+      layoutType,
+      qualityScore: characterDescription && characterDescription.length >= QUALITY_DESCRIPTION_LENGTH ? 'HIGH' : 'STANDARD'
+    });
 
     // ENHANCED: Allow empty pages array for story-to-comic-book generation
     if (!Array.isArray(pages)) {
