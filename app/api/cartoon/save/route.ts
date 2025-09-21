@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       metadata
     }: SaveCartoonRequest = await request.json();
 
-    console.log('📥 Received save request:', {
+   console.log('📥 Received save request:', {
       originalImageUrl: !!originalImageUrl,
       cartoonImageUrl: !!cartoonImageUrl,
       artStyle,
@@ -95,6 +95,39 @@ export async function POST(request: Request) {
     if (!artStyle?.trim()) {
       console.error('❌ Missing artStyle');
       return NextResponse.json({ error: 'Art style is required' }, { status: 400 });
+    }
+
+    // ✅ FIX: Smart validation - warn but don't block if description is short
+    const MIN_DESCRIPTION_LENGTH = 10; // Very minimal requirement for NOT NULL constraint
+    const QUALITY_DESCRIPTION_LENGTH = 50; // Recommended for quality
+    
+    if (!characterDescription || characterDescription.trim().length === 0) {
+      console.error('❌ Character description is completely missing');
+      return NextResponse.json({ 
+        error: 'Character description is required (database constraint)',
+        details: {
+          provided: false,
+          length: 0,
+          minimumRequired: MIN_DESCRIPTION_LENGTH
+        }
+      }, { status: 400 });
+    }
+    
+    if (characterDescription.trim().length < MIN_DESCRIPTION_LENGTH) {
+      console.error('❌ Character description too short:', characterDescription.length);
+      return NextResponse.json({ 
+        error: `Character description must be at least ${MIN_DESCRIPTION_LENGTH} characters`,
+        details: {
+          provided: true,
+          length: characterDescription.length,
+          minimumRequired: MIN_DESCRIPTION_LENGTH
+        }
+      }, { status: 400 });
+    }
+    
+    // Quality warning (log but don't block)
+    if (characterDescription.trim().length < QUALITY_DESCRIPTION_LENGTH) {
+      console.warn(`⚠️ Character description is short (${characterDescription.length} chars). Recommended: ${QUALITY_DESCRIPTION_LENGTH}+ for best quality.`);
     }
 
     // ✅ FIX: Add character description validation for quality
