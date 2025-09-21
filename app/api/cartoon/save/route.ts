@@ -186,41 +186,136 @@ export async function POST(request: Request) {
 
       console.log(`✅ Downloaded image: ${imageBuffer.length} bytes`);
 
-      // Step 2: Upload to Cloudinary
+   // Step 2: Upload to Cloudinary with retry logic
       const folderPath = `storybook/cartoons/${userId}`;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const timestamp = new Date().toISOString().replace(/[:\s.]/g, '-');
       const publicId = `${folderPath}/cartoon-${artStyle}-${timestamp}`;
 
       console.log('📤 Uploading to Cloudinary...');
       
-      const uploadResult = await new Promise((resolve, reject) => {
-        cloudinary.uploader.upload_stream(
-          {
-            resource_type: 'image',
-            public_id: publicId,
-            folder: folderPath,
-            overwrite: false,
-            quality: 'auto:good',
-            format: 'jpg',
-            transformation: [
-              { quality: 'auto:good' },
-              { fetch_format: 'auto' }
-            ],
-            tags: [`user-${userId}`, `style-${artStyle}`, 'cartoon', 'permanent']
-          },
-          (error, result) => {
-            if (error) {
-              console.error('❌ Cloudinary upload error:', error);
-              reject(error);
-            } else {
-              resolve(result);
-            }
+      // ✅ FIX: Enhanced upload with retry logic and better error handling
+      const MAX_UPLOAD_RETRIES = 3;
+      const UPLOAD_TIMEOUT = 30000; // 30 seconds per attempt
+      let uploadResult: any = null;
+      let lastUploadError: any = null;
+      
+      for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+        try {
+          // Add retry delay for subsequent attempts
+          if (attempt > 1) {
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
+            console.log(`⏳ Retry attempt ${attempt}/${MAX_UPLOAD_RETRIES} after ${delay}ms delay...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
           }
-        ).end(imageBuffer);
-      });
-
-      permanentCloudinaryUrl = (uploadResult as any).secure_url;
-      cloudinaryPublicId = (uploadResult as any).public_id;
+          
+          // Create upload promise with timeout
+          const uploadPromise = new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                resource_type: 'image',
+                public_id: publicId,
+                folder: folderPath,
+                overwrite: false,
+                quality: 'auto:good',
+                format: 'jpg',
+                transformation: [
+                  { quality: 'auto:good' },
+                  { fetch_format: 'auto' }
+                ],
+                tags: [`user-${userId}`, `style-${artStyle}`, 'cartoon', 'permanent'],
+                timeout: UPLOAD_TIMEOUT,
+                // ✅ NEW: Add chunk size for better reliability on slow connections
+                chunk_size: 6000000, // 6MB chunks
+              },
+              (error, result) => {
+                if (error) {
+                  console.error(`❌ Cloudinary upload error (attempt ${attempt}):`, {
+                    error: error.message || error,
+                    http_code: error.http_code,
+                    name: error.name,
+                    attempt
+                  });
+                  reject(error);
+                } else if (!result) {
+                  const emptyError = new Error('Cloudinary returned empty result');
+                  console.error(`❌ Cloudinary empty result (attempt ${attempt})`);
+                  reject(emptyError);
+                } else {
+                  console.log(`✅ Cloudinary upload successful (attempt ${attempt})`);
+                  resolve(result);
+                }
+              }
+            );
+            
+            // ✅ NEW: Handle stream errors
+            uploadStream.on('error', (streamError) => {
+              console.error(`❌ Upload stream error (attempt ${attempt}):`, streamError);
+              reject(streamError);
+            });
+            
+            // Write buffer to stream
+            uploadStream.end(imageBuffer);
+          });
+          
+          // Add timeout wrapper
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => {
+              reject(new Error(`Upload timeout after ${UPLOAD_TIMEOUT}ms`));
+            }, UPLOAD_TIMEOUT);
+          });
+          
+          // Race between upload and timeout
+          uploadResult = await Promise.race([uploadPromise, timeoutPromise]);
+          
+          // Success - break out of retry loop
+          break;
+          
+        } catch (uploadError: any) {
+          lastUploadError = uploadError;
+          
+          // Log detailed error information
+          console.error(`❌ Upload attempt ${attempt} failed:`, {
+            message: uploadError.message,
+            name: uploadError.name,
+            http_code: uploadError.http_code,
+            attempt,
+            willRetry: attempt < MAX_UPLOAD_RETRIES
+          });
+          
+          // Check if error is retryable
+          const isRetryable = 
+            uploadError.message?.includes('timeout') ||
+            uploadError.message?.includes('ETIMEDOUT') ||
+            uploadError.message?.includes('ESOCKETTIMEDOUT') ||
+            uploadError.message?.includes('ECONNRESET') ||
+            uploadError.message?.includes('ENOTFOUND') ||
+            uploadError.message?.includes('EAI_AGAIN') ||
+            uploadError.http_code === 420 || // Rate limit
+            uploadError.http_code === 500 || // Server error
+            uploadError.http_code === 502 || // Bad gateway
+            uploadError.http_code === 503 || // Service unavailable
+            uploadError.http_code === 504;   // Gateway timeout
+          
+          if (!isRetryable) {
+            console.error('❌ Non-retryable Cloudinary error - stopping retries');
+            throw uploadError;
+          }
+          
+          if (attempt === MAX_UPLOAD_RETRIES) {
+            // Final attempt failed
+            console.error('❌ All Cloudinary upload attempts failed');
+            throw new Error(`Failed to upload to Cloudinary after ${MAX_UPLOAD_RETRIES} attempts: ${uploadError.message || 'Unknown error'}`);
+          }
+        }
+      }
+      
+      // Validate upload result
+      if (!uploadResult || !uploadResult.secure_url || !uploadResult.public_id) {
+        throw new Error('Invalid Cloudinary upload result - missing required fields');
+      }
+      
+      permanentCloudinaryUrl = uploadResult.secure_url;
+      cloudinaryPublicId = uploadResult.public_id;
 
       console.log(`✅ Uploaded to Cloudinary: ${permanentCloudinaryUrl}`);
 
