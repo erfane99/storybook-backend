@@ -172,13 +172,7 @@ export async function POST(request: Request) {
     if (!Array.isArray(pages)) {
       return NextResponse.json({ error: 'Pages must be an array' }, { status: 400 });
     }
-    
-    // Validate character art style
-    const validStyles = ['storybook', 'semi-realistic', 'comic-book', 'flat-illustration', 'anime'];
-    if (!validStyles.includes(characterArtStyle)) {
-      return NextResponse.json({ error: 'Invalid character art style' }, { status: 400 });
-    }
-    
+
     const validatedPages = pages || [];
     const processingMode = validatedPages.length > 0 ? 'predefined-pages' : 'story-to-comic-panels';
     
