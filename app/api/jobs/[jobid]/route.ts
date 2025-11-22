@@ -34,6 +34,12 @@ const JOB_TABLES = [
     type: 'images',
     resultFields: ['generated_image_url', 'final_prompt_used'],
     estimatedMinutesPerProgress: 1.5 / 100 // 1.5 seconds per progress point
+  },
+  {
+    table: 'character_description_jobs',
+    type: 'character-description',
+    resultFields: ['character_description'],
+    estimatedMinutesPerProgress: 1.0 / 100 // 1.0 seconds per progress point
   }
 ] as const;
 
@@ -204,6 +210,11 @@ function formatJobResults(job: any, jobType: string): any {
         reused: job.is_reused_image || false
       };
 
+    case 'character-description':
+      return {
+        character_description: job.character_description
+      };
+
     default:
       return job.result_data || {};
   }
@@ -259,6 +270,13 @@ function createJobMetadata(job: any, jobType: string): any {
         audience: job.audience,
         emotion: job.emotion,
         isReusedImage: !!job.is_reused_image
+      };
+
+    case 'character-description':
+      return {
+        ...baseMetadata,
+        analysisType: job.analysis_type,
+        hasImageUrl: !!job.image_url
       };
 
     default:
