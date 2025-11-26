@@ -115,9 +115,8 @@ The cartoon must preserve the person's identity while transforming them into the
             ]
           }],
           generationConfig: {
-            image_size: "2K",
-            thinking_mode: true,
-            temperature: 0.7
+            temperature: 0.7,
+            max_output_tokens: 2000
           }
         })
       }
