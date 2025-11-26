@@ -4,6 +4,39 @@ import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
+// Gemini response type definitions
+interface GeminiGenerationConfig {
+  image_size: '1K' | '2K' | '4K';
+  thinking_mode: boolean;
+  temperature: number;
+}
+
+interface GeminiResponse {
+  candidates?: Array<{
+    content: {
+      parts: Array<{
+        inline_data?: {
+          mime_type: string;
+          data: string;
+        };
+      }>;
+    };
+  }>;
+}
+
+// Helper function to get style descriptions
+function getStyleDescription(artStyle: string): string {
+  const styleDescriptions: Record<string, string> = {
+    'storybook': 'soft watercolor edges, warm pastels, rounded features, gentle lighting',
+    'comic-book': 'bold ink outlines, cel-shading, high contrast, dynamic poses',
+    'anime': 'cel-shaded, large expressive eyes, vibrant colors, dynamic hair',
+    'semi-realistic': 'smooth gradients, natural proportions, polished rendering, subtle shadows',
+    'flat-illustration': 'clean vector lines, solid flat colors, minimal shadows, geometric shapes'
+  };
+  
+  return styleDescriptions[artStyle] || styleDescriptions['storybook'];
+}
+
 export async function POST(req: Request) {
   console.log('✅ Entered cartoonize-image API route');
 
@@ -14,14 +47,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No image file provided' }, { status: 400 });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: 'Missing OpenAI API key' }, { status: 500 });
+  if (!process.env.GOOGLE_API_KEY) {
+    return NextResponse.json({ error: 'Missing Gemini API key configuration' }, { status: 500 });
   }
 
   try {
-    // Convert image to buffer
+    console.log('📸 Converting image to base64 for Gemini...');
+    
+    // Convert image to buffer and base64
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+    const base64Image = buffer.toString('base64');
+
+    // Get art style and audience from form data
+    const artStyle = formData.get('artStyle') as string || 'storybook';
+    const audience = formData.get('audience') as string || 'children';
+
+    console.log(`🎨 Art style: ${artStyle}, Audience: ${audience}`);
 
     // Upload original image to Cloudinary
     const originalUpload = await new Promise((resolve, reject) => {
@@ -34,41 +76,81 @@ export async function POST(req: Request) {
       ).end(buffer);
     });
 
-    // Call OpenAI API to generate image
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt: 'Create a cartoon-style character suitable for a children\'s storybook, with a whimsical and friendly appearance',
-        n: 1,
-        size: '1024x1024',
-        quality: 'standard',
-      }),
-    });
+    // Build Gemini prompt based on art style and audience
+    const cartoonPrompt = `Create a professional ${artStyle}-style cartoon character from this photo.
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API Error:', {
-        status: response.status,
-        statusText: response.statusText,
+Requirements:
+- Maintain facial features, expressions, and distinctive characteristics from the photo
+- Style: ${artStyle} art style (${getStyleDescription(artStyle)})
+- Audience: ${audience}
+- Character should be whimsical and friendly with clear, bold features
+- Perfect for comic book panels and sequential storytelling
+- High quality, professional illustration suitable for publication
+
+The cartoon must preserve the person's identity while transforming them into the ${artStyle} art style.`;
+
+    console.log('🎨 Calling Gemini API for cartoonization...');
+
+    // Call Gemini API with actual image
+    const geminiResponse = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': process.env.GOOGLE_API_KEY!,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                text: cartoonPrompt
+              },
+              {
+                inline_data: {
+                  mime_type: file.type || 'image/jpeg',
+                  data: base64Image
+                }
+              }
+            ]
+          }],
+          generationConfig: {
+            image_size: "2K",
+            thinking_mode: true,
+            temperature: 0.7
+          }
+        })
+      }
+    );
+
+    if (!geminiResponse.ok) {
+      const errorData = await geminiResponse.json();
+      console.error('Gemini API Error:', {
+        status: geminiResponse.status,
         error: errorData
       });
-      throw new Error(errorData.error?.message || 'Failed to generate image');
+      
+      return NextResponse.json(
+        { error: errorData.error?.message || 'Failed to generate cartoon' },
+        { status: 500 }
+      );
     }
 
-    const data = await response.json();
+    const geminiData: GeminiResponse = await geminiResponse.json();
     
-    if (!data.data?.[0]?.url) {
-      throw new Error('No image URL received from OpenAI');
+    console.log('✅ Gemini cartoonization successful');
+
+    // Handle Gemini response format
+    const generatedImageData = geminiData.candidates?.[0]?.content?.parts?.[0]?.inline_data;
+    
+    if (!generatedImageData?.data) {
+      throw new Error('No image generated by Gemini');
     }
 
-    // Download the generated image and upload to Cloudinary
-    const generatedImageResponse = await fetch(data.data[0].url);
-    const generatedImageBuffer = Buffer.from(await generatedImageResponse.arrayBuffer());
+    // Convert base64 back to buffer for Cloudinary upload
+    const generatedBuffer = Buffer.from(generatedImageData.data, 'base64');
+
+    console.log('☁️ Uploading to Cloudinary...');
     
     const generatedUpload = await new Promise((resolve, reject) => {
       cloudinary.uploader.upload_stream(
@@ -77,8 +159,10 @@ export async function POST(req: Request) {
           if (error) reject(error);
           else resolve(result);
         }
-      ).end(generatedImageBuffer);
+      ).end(generatedBuffer);
     });
+
+    console.log('✅ Cartoonization complete');
 
     return NextResponse.json({
       original: (originalUpload as any).secure_url,
