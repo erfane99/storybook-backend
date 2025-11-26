@@ -165,8 +165,8 @@ The cartoon must preserve the person's identity while transforming them into the
     console.log('✅ Cartoonization complete');
 
     return NextResponse.json({
-      original: (originalUpload as any).secure_url,
-      generated: (generatedUpload as any).secure_url
+      cartoonImageUrl: (generatedUpload as any).secure_url,
+      originalImageUrl: (originalUpload as any).secure_url
     });
   } catch (error: any) {
     console.error('Error generating image:', error);
