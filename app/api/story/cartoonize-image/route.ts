@@ -116,7 +116,12 @@ The cartoon must preserve the person's identity while transforming them into the
           }],
           generationConfig: {
             temperature: 0.7,
-            max_output_tokens: 2000
+            max_output_tokens: 2000,
+            responseModalities: ['TEXT', 'IMAGE'],  // ✅ ADDED: Must include both TEXT and IMAGE for image generation
+            imageConfig: {                          // ✅ ADDED: Image generation configuration
+              aspectRatio: '1:1',                   // ✅ ADDED: Square aspect ratio for character cartoons
+              imageSize: '2K'                       // ✅ ADDED: 2K resolution for quality
+            }
           }
         })
       }
