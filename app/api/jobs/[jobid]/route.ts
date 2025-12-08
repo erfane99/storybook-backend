@@ -527,3 +527,134 @@ export async function OPTIONS() {
     // CORS headers removed - handled by next.config.js globally
   });
 }
+
+/**
+ * Cancel a job by setting its status to 'cancelled'
+ * This allows users to stop jobs that are pending or processing
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: { jobid: string } }
+) {
+  try {
+    const { jobid } = params;
+
+    if (!jobid) {
+      return NextResponse.json(
+        { error: 'Job ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate job ID format (should be UUID)
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidPattern.test(jobid)) {
+      return NextResponse.json(
+        { error: 'Invalid job ID format' },
+        { status: 400 }
+      );
+    }
+
+    // Validate environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables');
+      return NextResponse.json(
+        { error: 'Database configuration error' },
+        { status: 500 }
+      );
+    }
+
+    // Use admin client for database operations (bypasses RLS)
+    const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    console.log(`🚫 Attempting to cancel job ${jobid}...`);
+
+    // Search for the job and update its status
+    let jobCancelled = false;
+    let jobType = '';
+
+    for (const config of JOB_TABLES) {
+      try {
+        // First check if job exists in this table
+        const { data: existingJob, error: checkError } = await adminSupabase
+          .from(config.table)
+          .select('id, status')
+          .eq('id', jobid)
+          .single();
+
+        if (checkError || !existingJob) {
+          continue; // Job not in this table, try next
+        }
+
+        jobType = config.type;
+
+        // Check if job can be cancelled (only pending or processing jobs)
+        if (existingJob.status === 'completed') {
+          return NextResponse.json(
+            { error: 'Cannot cancel a completed job' },
+            { status: 400 }
+          );
+        }
+
+        if (existingJob.status === 'cancelled') {
+          return NextResponse.json(
+            { success: true, message: 'Job is already cancelled' }
+          );
+        }
+
+        // Update job status to cancelled
+        const { error: updateError } = await adminSupabase
+          .from(config.table)
+          .update({
+            status: 'cancelled',
+            updated_at: new Date().toISOString(),
+            current_step: 'Cancelled by user'
+          })
+          .eq('id', jobid);
+
+        if (updateError) {
+          console.error(`❌ Error updating job in ${config.table}:`, updateError);
+          return NextResponse.json(
+            { error: 'Failed to cancel job' },
+            { status: 500 }
+          );
+        }
+
+        jobCancelled = true;
+        console.log(`✅ Successfully cancelled ${config.type} job ${jobid}`);
+        break;
+
+      } catch (tableError) {
+        console.warn(`⚠️ Error checking ${config.table}:`, tableError);
+        continue;
+      }
+    }
+
+    if (!jobCancelled) {
+      return NextResponse.json(
+        { error: 'Job not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Job cancelled successfully',
+      jobId: jobid,
+      jobType: jobType
+    });
+
+  } catch (error: unknown) {
+    console.error('❌ Job cancellation error:', error);
+    return NextResponse.json(
+      { 
+        error: error instanceof Error ? error.message : 'Failed to cancel job',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
+      },
+      { status: 500 }
+    );
+  }
+}
