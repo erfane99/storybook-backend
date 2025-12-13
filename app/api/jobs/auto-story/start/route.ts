@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     }
 
     // Validate genre
-    const validGenres = ['adventure', 'siblings', 'bedtime', 'fantasy', 'history'];
+    const validGenres = ['adventure', 'fantasy', 'mystery', 'comedy', 'friendship', 'courage', 'nature', 'creativity', 'sports', 'siblings', 'bedtime', 'history'];
     if (!validGenres.includes(genre)) {
       return NextResponse.json({ error: 'Invalid genre' }, { status: 400 });
     }
