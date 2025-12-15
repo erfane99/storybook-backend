@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     // Admin client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse and validate input data with comic book enhancements
+    // Parse and validate input data with comic book enhancements and multi-character support
     const { 
       title, 
       story, 
@@ -51,7 +51,8 @@ export async function POST(request: Request) {
       isReusedImage,
       characterDescription,
       characterArtStyle = 'storybook',
-      layoutType = 'comic-book-panels'
+      layoutType = 'comic-book-panels',
+      characters = [] // NEW: Multi-character support (up to 4 characters)
     } = await request.json();
 
     // ✅ FIX: Comprehensive quality validation gates
@@ -210,6 +211,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     // ✅ DATABASE-FIRST: Store in individual columns matching exact database schema
+    // ENHANCED: Include multi-character support
     const { error: insertError } = await adminSupabase
       .from('storybook_jobs')
       .insert({
@@ -228,6 +230,7 @@ export async function POST(request: Request) {
         character_description: characterDescription || '',
         character_art_style: characterArtStyle,
         layout_type: layoutType,
+        characters: characters.length > 0 ? characters : null, // NEW: Store characters as JSONB
         created_at: now,
         updated_at: now,
         retry_count: 0,

@@ -41,14 +41,15 @@ export async function POST(request: Request) {
     // Initialize admin Supabase client for database operations (bypasses RLS)
     const adminSupabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse and validate input data with comic book enhancements
+    // Parse and validate input data with comic book enhancements and multi-character support
     const { 
       genre, 
       characterDescription, 
       cartoonImageUrl, 
       audience,
       characterArtStyle = 'storybook',
-      layoutType = 'comic-book-panels'
+      layoutType = 'comic-book-panels',
+      characters = [] // NEW: Multi-character support (up to 4 characters)
     } = await request.json();
 
     console.log('📥 Auto-story request:', {
@@ -57,7 +58,8 @@ export async function POST(request: Request) {
       characterArtStyle,
       layoutType,
       hasCharacterDescription: !!characterDescription,
-      hasCartoonImageUrl: !!cartoonImageUrl
+      hasCartoonImageUrl: !!cartoonImageUrl,
+      characterCount: characters.length // NEW: Log character count
     });
 
     // Enhanced validation
@@ -117,7 +119,7 @@ export async function POST(request: Request) {
 
     console.log(`🎨 Creating auto-story job ${jobId} for user ${userId}`);
 
-    // ENHANCED: Create job entry with comic book layout context
+    // ENHANCED: Create job entry with comic book layout context and multi-character support
     const { error: insertError } = await adminSupabase
       .from('auto_story_jobs')
       .insert({
@@ -130,8 +132,9 @@ export async function POST(request: Request) {
         character_description: characterDescription,
         cartoon_image_url: cartoonImageUrl,
         audience: audience,
-        character_art_style: characterArtStyle, // NEW: Store character art style
-        layout_type: layoutType, // NEW: Store layout type
+        character_art_style: characterArtStyle,
+        layout_type: layoutType,
+        characters: characters.length > 0 ? characters : null, // NEW: Store characters as JSONB
         created_at: now,
         updated_at: now,
         retry_count: 0,
