@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     // Query the specific storybook
     const { data, error } = await adminSupabase
       .from('storybook_entries')
-      .select('id, title, created_at, pages, audience, character_description')
+      .select('id, title, created_at, pages, audience, character_description, cover_image, story')
       .eq('id', storybookId)
       .eq('user_id', userId)
       .single();

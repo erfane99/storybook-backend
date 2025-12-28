@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     // Query storybooks for the user
     const { data, error } = await adminSupabase
       .from('storybook_entries')
-      .select('id, title, created_at')
+      .select('id, title, created_at, cover_image, audience, pages')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
