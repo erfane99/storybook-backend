@@ -24,6 +24,9 @@ export async function GET() {
       story: {
         generateScenes: '/api/story/generate-scenes',
         generateCartoonImage: '/api/story/generate-cartoon-image',
+      },
+      deprecated: {
+        note: 'These routes return 410 Gone — update clients to use jobs.*.start',
         generateAutoStory: '/api/story/generate-auto-story',
         createStorybook: '/api/story/create-storybook',
       },

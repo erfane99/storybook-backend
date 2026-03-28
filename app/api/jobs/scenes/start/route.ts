@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 
     // Calculate estimated completion time based on story length and audience
     const wordCount = story.trim().split(/\s+/).length;
-    const baseMinutes = audience === 'children' ? 2 : audience === 'young_adults' ? 3 : 4;
+    const baseMinutes = audience === 'children' ? 3 : audience === 'young_adults' ? 4 : 5;
     const estimatedMinutes = Math.max(1, baseMinutes + Math.floor(wordCount / 200));
     const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
 
@@ -103,7 +103,12 @@ export async function POST(request: Request) {
       storyInfo: {
         wordCount,
         audience,
-        estimatedScenes: audience === 'children' ? '5-8' : audience === 'young_adults' ? '8-12' : '10-15'
+        estimatedScenes:
+          audience === 'children'
+            ? '12-16 (target 14)'
+            : audience === 'young_adults'
+              ? '18-22 (target 20)'
+              : '24-32 (target 28)'
       }
     });
 
