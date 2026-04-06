@@ -121,15 +121,8 @@ export async function GET(
 }
 
 /**
- * OPTIONS handler for CORS preflight
+ * OPTIONS preflight — CORS headers are set globally in next.config.js for /api routes.
  */
 export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  });
+  return new NextResponse(null, { status: 200 });
 }
